@@ -10,6 +10,8 @@ export class GameMap {
     this.w = gen.w; this.h = gen.h;
     this.tiles = gen.tiles;
     this.deco = gen.deco || new Uint8Array(gen.w * gen.h);
+    this.style = gen.style || null;   // per-tile floor style (roof colours): selects roles floor0, floor1 ...
+    this.conv = gen.conv || null;     // conveyor direction per tile: 1 right, 2 left, 3 down, 4 up
     this.pxW = gen.w * TILE; this.pxH = gen.h * TILE;
     this.assets = assets;
     this.ts = assets.tileset(tilesetId);
@@ -19,6 +21,13 @@ export class GameMap {
     this.chunks = new Array(this.chunkCols * this.chunkRows).fill(null);
     this.chunksBuilt = 0;
     this.hitWall = false; // set by resolveCircle when it pushes something out of a solid tile
+  }
+
+  // Change a tile at runtime (a skylight giving way) and redraw its chunk.
+  setTile(tx, ty, t) {
+    this.tiles[ty * this.w + tx] = t;
+    const ci = Math.floor(ty / CHUNK_TILES) * this.chunkCols + Math.floor(tx / CHUNK_TILES);
+    this.chunks[ci] = null;
   }
 
   tile(tx, ty) {
@@ -145,11 +154,22 @@ export class GameMap {
       return;
     }
     if (t === T.PIT) {
-      a.drawRole(g, ts, 'pit', x, y, tx, ty, seed);
+      // a building facade drops away under the south edge of a roof
+      const edge = ty > 0 && this.tiles[(ty - 1) * this.w + tx] === T.FLOOR && ts.roles.pitEdge && ts.roles.pitEdge.length;
+      a.drawRole(g, ts, edge ? 'pitEdge' : 'pit', x, y, tx, ty, seed);
       if (ts.pitShade) { g.fillStyle = ts.pitShade; g.fillRect(x, y, TILE, TILE); }
       return;
     }
-    a.drawRole(g, ts, 'floor', x, y, tx, ty, seed);
+    const cv = this.conv ? this.conv[ty * this.w + tx] : 0;
+    if (cv && ts.roles.conveyor) {
+      const set = ts.roles.conveyor[cv - 1] || ts.roles.conveyor[0];
+      const fr = a.pickFrame(set, tx, ty, seed);
+      if (cv === 3) { g.save(); g.translate(x, y + TILE); g.scale(1, -1); a.drawFrame(g, ts.sheet, fr, 0, 0); g.restore(); }
+      else if (!a.drawFrame(g, ts.sheet, fr, x, y)) { g.fillStyle = ts.placeholder.floor; g.fillRect(x, y, TILE, TILE); g.fillStyle = '#ffffff55'; g.fillRect(x + 5, y + 7, 6, 2); }
+    } else {
+      const sr = this.style ? 'floor' + this.style[ty * this.w + tx] : 'floor';
+      a.drawRole(g, ts, ts.roles[sr] ? sr : 'floor', x, y, tx, ty, seed);
+    }
     if (this.deco[ty * this.w + tx]) a.drawRole(g, ts, 'deco', x, y, tx, ty, seed + 7);
     if (t === T.COVER) {
       // cover frames are transparent props; fall back to a crate-coloured square in placeholder mode

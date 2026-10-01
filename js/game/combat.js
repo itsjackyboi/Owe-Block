@@ -39,6 +39,7 @@ export function damage(match, t, amount, o = {}) {
     if (o.kb) knock(t, ang, o.kb, o.slamStun || 0);
     const involved = t.isPlayer || (src && src.isPlayer);
     match.fx.hitSparks(t.x, t.y, ang, amount, t.isPlayer);
+    match.sfx('hit', t.x, t.y);
     if (involved) {
       match.fx.popup(t.x, t.y - 12, String(Math.max(1, Math.round(amount))), t.isPlayer ? '#ff6a5a' : '#ffffff');
       match.game.loop.stopFor(clamp(0.035 + amount * 0.0012, 0.04, 0.07));
@@ -64,6 +65,7 @@ function parried(match, t, src, ang) {
   t.parryT = 0;
   match.fx.sparks(t.x + Math.cos(ang) * 8, t.y + Math.sin(ang) * 8, 10, '#ffffff', 90);
   match.fx.popup(t.x, t.y - 14, 'RIPOSTE', '#9ad0ff');
+  match.sfx('parry', t.x, t.y);
   if (t.isPlayer || src.isPlayer) { match.game.loop.stopFor(0.07); match.camera.addTrauma(0.3); }
   if (t.parryCounter > 0) {
     damage(match, src, t.parryCounter, { source: t, kind: 'counter', kb: 170, ang: Math.atan2(src.y - t.y, src.x - t.x), itemId: t.parryItem });
@@ -85,6 +87,8 @@ export function kill(match, v, killer, itemId) {
   if (k) { k.kills++; if (k.lungeT > 0) { k.dashCd = 0; k.lungeT = 0; k.hitFlash = 0; match.fx.popup(k.x, k.y - 14, 'DASH READY', '#9ad0ff'); } }
   match.onKill(v, k, itemId);
 
+  if (v.isPlayer) v.finalBuild = v.slots.filter(Boolean).map((s) => ({ id: s.id, level: s.level })); // for the summary screen
+  match.sfx('kill', v.x, v.y);
   const px = v.x, py = v.y;
   match.fx.deathBurst(px, py, v.outfit);
   // gear drops at current levels

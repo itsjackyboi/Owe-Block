@@ -61,16 +61,13 @@ export function drawDeath(ctx, match) {
   const k = p.killedBy;
   lines.push(k ? 'KILLED BY ' + k.name + (p.killedByItem ? ' (' + itemName(p.killedByItem) + ')' : '') : p.deathKind === 'zone' ? "SWEPT BY GOBBLER'S POLICE" : p.deathKind === 'fall' ? 'FELL INTO THE VOID' : 'KILLED BY THE CAVE');
   lines.forEach((l, i) => drawText(ctx, l, cx, 104 + i * 14, { align: 'center' }));
-  drawText(ctx, 'R: TRY AGAIN', cx, 200, { align: 'center', color: '#ffd860' });
+  if (match.deadT > 1) drawText(ctx, 'ENTER: SUMMARY    R: TRY AGAIN', cx, 200, { align: 'center', color: '#ffd860' });
 }
 
-export function drawVictory(ctx, match) {
-  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, INTERNAL_W, INTERNAL_H);
-  const cx = INTERNAL_W / 2;
-  drawText(ctx, 'LAST ONE STANDING', cx, 70, { align: 'center', scale: 3, color: '#ffd860' });
-  drawText(ctx, 'KILLS ' + match.player.kills + '   TIME ' + fmtTime(match.time), cx, 110, { align: 'center' });
-  drawText(ctx, '(GANG CHOICE AND SUMMARY ARRIVE IN STAGE 6)', cx, 134, { align: 'center', color: '#8a8aa0' });
-  drawText(ctx, 'R: NEW MATCH', cx, 170, { align: 'center', color: '#ffd860' });
+// Everyone else is down: a short beat before the gang choice appears.
+export function drawWinHint(ctx, match) {
+  drawText(ctx, 'LAST ONE STANDING!', INTERNAL_W / 2, 90, { align: 'center', scale: 3, color: '#ffd860' });
+  void match;
 }
 
 export const fmtTime = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');

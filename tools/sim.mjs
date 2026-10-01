@@ -1,5 +1,5 @@
 // Headless AI simulation runner.
-//   node tools/sim.mjs [--seeds 10] [--first 1] [--port 8098] [--frames]
+//   node tools/sim.mjs [--seeds 10] [--first 1] [--mode mines|rooftops|pipepit] [--port 8098] [--frames]
 // Runs full 41-fighter matches (the "player" is a high-tier bot) by stepping the match without rendering,
 // and reports match length, population over time, who won (by tier) and navigation load.
 // With --frames it also plays a normal-speed match in real time and reports frame times (update + render).
@@ -7,7 +7,7 @@ import { startSite, loadPlaywright } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] : def; };
-const seeds = +opt('seeds', 10), first = +opt('first', 1), port = +opt('port', 8098);
+const seeds = +opt('seeds', 10), first = +opt('first', 1), port = +opt('port', 8098), mode = opt('mode', 'mines');
 const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 
 const site = await startSite(port);
@@ -20,7 +20,7 @@ try {
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-    await page.goto(`${site.base}?debug=1&sim=1&manual=1&seed=${seed}`);
+    await page.goto(`${site.base}?debug=1&sim=1&manual=1&mode=${mode}&seed=${seed}`);
     await page.waitForTimeout(600);
     const t0 = Date.now();
     let result = null;
@@ -53,7 +53,7 @@ try {
 
   if (args.includes('--frames')) {
     const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
-    await page.goto(`${site.base}?debug=1&seed=3`);
+    await page.goto(`${site.base}?debug=1&mode=${mode}&seed=3`);
     await page.waitForTimeout(500);
     // a real-time match at normal speed: put the camera in the thick of it and measure
     await page.evaluate(() => {

@@ -114,7 +114,9 @@ function drawSlots(ctx, match, p, assets) {
 const MM = 64;
 
 // Pre-render the map silhouette once (nearest-neighbour sample of the tile grid).
-export function buildMinimap(map) {
+export function buildMinimap(map, palette) {
+  const hex = (s, d) => { const m = /^#(..)(..)(..)/.exec(s || ''); return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : d; };
+  const pal = { floor: hex(palette && palette.floor, [200, 146, 92]), wall: hex(palette && palette.wall, [34, 22, 28]), pit: hex(palette && palette.pit, [0, 0, 0]) };
   const c = document.createElement('canvas');
   c.width = MM; c.height = MM;
   const g = c.getContext('2d');
@@ -122,7 +124,7 @@ export function buildMinimap(map) {
   for (let y = 0; y < MM; y++) for (let x = 0; x < MM; x++) {
     const t = map.tiles[Math.floor((y / MM) * map.h) * map.w + Math.floor((x / MM) * map.w)];
     const i = (y * MM + x) * 4;
-    const col = t === T.WALL ? [34, 22, 28] : t === T.PIT ? [0, 0, 0] : t === T.COVER ? [150, 100, 60] : [200, 146, 92];
+    const col = t === T.WALL ? pal.wall : t === T.PIT ? pal.pit : t === T.COVER ? [150, 100, 60] : pal.floor;
     img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
   }
   g.putImageData(img, 0, 0);

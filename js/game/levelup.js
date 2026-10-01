@@ -69,6 +69,7 @@ export function pickOffer(f, offers, rng) {
   const held = f.slots[f.held];
   for (const o of offers) {
     let sc = rng.float(0, tier === 'high' ? 0.15 : 0.5);
+    if (f.prefers && f.prefers.includes(o.id)) sc += 0.5; // named fighters chase their favourites
     if (o.type === 'item') sc += 0.7;
     else if (o.type === 'upgrade') sc += 0.8 + (tier === 'high' && held && held.id === o.id ? 0.7 : 0);
     else sc += tier === 'high' ? (GOOD_STATS[o.id] || 0.1) : 0.3;

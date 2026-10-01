@@ -140,16 +140,7 @@
           97,
           109,
           109,
-          121,
-          52,
-          53,
-          54,
-          64,
-          65,
-          66,
-          48,
-          49,
-          50
+          121
         ],
         "wall": [
           76,
@@ -158,8 +149,7 @@
           73
         ],
         "wallTop": [
-          96,
-          108
+          72
         ],
         "cover": [
           51,
@@ -168,26 +158,59 @@
           130
         ],
         "pit": [
-          39,
-          40,
-          41
+          39
         ],
         "deco": [],
         "hazard_warn": [],
-        "hazard_mark": []
+        "hazard_mark": [],
+        "floor0": [
+          52,
+          53,
+          54,
+          64,
+          65,
+          66
+        ],
+        "floor1": [
+          48,
+          49,
+          50,
+          60,
+          61,
+          62
+        ],
+        "floor2": [
+          97,
+          109,
+          109,
+          121
+        ],
+        "pitEdge": [
+          76,
+          77
+        ]
       },
-      "pitShade": "#00000099",
+      "pitShade": "#000000aa",
       "placeholder": {
         "floor": "#b8744a",
         "wall": "#9aa0b4",
         "wallTop": "#cfd4e0",
         "cover": "#7a5a48",
-        "pit": "#2a1c14"
+        "pit": "#2a1c14",
+        "floor0": "#c8503a",
+        "floor1": "#6a7a98",
+        "floor2": "#aaaab8",
+        "pitEdge": "#7a7a8a"
       },
       "_notes": {
-        "_status": "PROVISIONAL. Stage 5 reviews this with the user. Not used by any mode yet.",
         "floor": "Tiny Town roof tiles: flat stone roof (97, 109, 121) and red (52-54, 64-66) / slate (48-50) shingles.",
-        "pit": "Dirt street (39-41), seen from above, darkened by pitShade. Falling means dropping into the alley."
+        "pit": "39: plain dirt street far below, darkened by pitShade. Falling here costs 15% max HP and a 0.8 s stun.",
+        "floor0": "Red shingle roofs (Tiny Town 52-54, 64-66).",
+        "floor1": "Slate roofs (48-50, 60-62).",
+        "floor2": "Flat stone roofs (97, 109, 121). Also used for planks and vault ledges so they read as different from shingles.",
+        "pitEdge": "76/77 plaster wall faces: drawn on the alley tile directly south of a roof edge, so a roof reads as a building dropping away.",
+        "wall": "Map border only.",
+        "wallTop": "Map border only."
       }
     },
     "pipepit": {
@@ -202,16 +225,17 @@
         "wall": [
           72,
           84,
-          73,
-          85
+          72,
+          84,
+          73
         ],
         "wallTop": [
           3
         ],
         "cover": [
+          73,
+          85,
           97,
-          96,
-          109,
           126
         ],
         "pit": [
@@ -229,6 +253,30 @@
         ],
         "hazard_mark": [
           131
+        ],
+        "conveyor": [
+          [
+            25,
+            26,
+            27
+          ],
+          [
+            37,
+            38,
+            39
+          ],
+          [
+            16,
+            17,
+            28,
+            29
+          ],
+          [
+            16,
+            17,
+            28,
+            29
+          ]
         ]
       },
       "pitShade": "#00000066",
@@ -240,10 +288,12 @@
         "pit": "#2a1c1c"
       },
       "_notes": {
-        "_status": "PROVISIONAL. Stage 5 reviews this with the user. Not used by any mode yet.",
         "floor": "Tiny Factory 0-2: orange tan floor plates.",
         "pit": "Dark maroon pit tiles with rubble (9, 11, 32-35).",
-        "hazard_warn": "Yellow-black hazard stripes (117-119)."
+        "hazard_warn": "Yellow-black hazard stripes (117-119).",
+        "conveyor": "Belt chevrons by direction: [right 25-27, left 37-39, down (vertical frames drawn flipped) 16/17/28/29, up 16/17/28/29].",
+        "wall": "72/84 grey machine faces, 73 brown crate face: drawn on pipe-maze walls whose south side is open.",
+        "cover": "73/85 crates, 97 canister, 126 barrel."
       }
     }
   },

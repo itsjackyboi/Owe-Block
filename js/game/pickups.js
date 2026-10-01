@@ -78,7 +78,7 @@ export class Pickups {
           if (d2 < magnet * magnet) {
             const d = Math.sqrt(d2) || 1, pull = 70 + (1 - d / magnet) * 170;
             p.x += (dx / d) * pull * dt; p.y += (dy / d) * pull * dt;
-            if (d < 6) { grantXp(m, f, p.value); m.fx.sparks(p.x, p.y, 3, '#ffd860', 40, 0.2); this.remove(p); }
+            if (d < 6) { grantXp(m, f, p.value); m.fx.sparks(p.x, p.y, 3, '#ffd860', 40, 0.2); if (f.isPlayer) m.sfx('xp', f.x, f.y); this.remove(p); }
           }
         } else {
           if (p.delayId === f.id && m.time < p.delayUntil) continue;
@@ -86,6 +86,7 @@ export class Pickups {
             f.addItem(p.id, p.level);
             m.fx.sparks(p.x, p.y, 6, RARITY_COLOR[ITEMS[p.id].rarity] || '#fff', 70, 0.3);
             m.fx.popup(f.x, f.y - 14, f.lastPickupMsg, '#ffffff');
+            m.sfx('pickup', f.x, f.y);
             this.remove(p);
           } else if (d2 < bd) { bd = d2; best = p; }
         }

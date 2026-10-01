@@ -94,7 +94,7 @@ export class AIController {
 
   perceive(f) {
     const m = this.match, tier = this.tier;
-    m.hash.query(f.x, f.y, tier.perceive, scratch);
+    m.hash.query(f.x, f.y, m.lightRadius ? Math.min(tier.perceive, m.lightRadius) : tier.perceive, scratch);
     let best = null, bs = 0;
     for (let i = 0; i < scratch.length; i++) {
       const t = scratch[i];
@@ -200,6 +200,7 @@ export class AIController {
       if (p.kind === 'xp') score = 0.3 * (1 - d / R);
       else {
         const def = ITEMS[p.id];
+        if (!m.nav.sameComp(f.x, f.y, p.x, p.y)) continue; // lying on an island roof
         const take = f.canTake(p.id);
         const need = take ? (armed ? 0.9 : 1.5) : 0.25;
         score = (0.35 + 0.5 * (RARITY_VALUE[def.rarity] || 0.5)) * need * (1 - d / R);
@@ -379,6 +380,7 @@ export class AIController {
     const dx = gx - f.x, dy = gy - f.y, d = Math.hypot(dx, dy);
     if (d < 6) return ZERO;
     if (d < 220 && m.map.walkClear(f.x, f.y, gx, gy, 4)) { this.path = null; return { x: dx / d, y: dy / d }; }
+    if (!nav.sameComp(f.x, f.y, gx, gy)) return ZERO; // across a gap: no walk will get us there
     const key = nav.tile(gx, gy);
     if (!this.path || key !== this.pathKey || m.time - this.pathT > 1) {
       const p = nav.findPath(f.x, f.y, gx, gy);

@@ -18,5 +18,5 @@ try {
 export default [
   { ...recommended, files: ['js/**/*.js'], languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: browser } },
   { files: ['js/**/*.js'], rules: { 'no-unused-vars': ['warn', { args: 'none' }], 'no-undef': 'error', 'no-var': 'error', 'prefer-const': 'warn', eqeqeq: ['warn', 'smart'] } },
-  { files: ['tools/**/*.mjs'], languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: { process: 'readonly', console: 'readonly', setTimeout: 'readonly', setInterval: 'readonly', clearInterval: 'readonly', window: 'readonly', document: 'readonly', location: 'readonly', URL: 'readonly' } }, rules: { 'no-undef': 'error' } },
+  { files: ['tools/**/*.mjs'], languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: { process: 'readonly', console: 'readonly', setTimeout: 'readonly', setInterval: 'readonly', clearInterval: 'readonly', window: 'readonly', document: 'readonly', location: 'readonly', localStorage: 'readonly', URL: 'readonly' } }, rules: { 'no-undef': 'error' } },
 ];

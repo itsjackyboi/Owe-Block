@@ -20,6 +20,28 @@ export class Nav {
     this.stamp = 0;
     this.heap = new Int32Array(n * 2);
     this.flows = new Map();
+    // connected walkable components, so the AI never plans a walk across a gap it cannot cross
+    this.comp = new Int32Array(n).fill(-1);
+    let c = 0;
+    const q = new Int32Array(n);
+    for (let s = 0; s < n; s++) {
+      if (!this.walk[s] || this.comp[s] >= 0) continue;
+      let qh = 0, qt = 0; q[qt++] = s; this.comp[s] = c;
+      while (qh < qt) {
+        const i = q[qh++], x = i % this.w, y = (i / this.w) | 0;
+        if (x > 0 && this.walk[i - 1] && this.comp[i - 1] < 0) { this.comp[i - 1] = c; q[qt++] = i - 1; }
+        if (x < this.w - 1 && this.walk[i + 1] && this.comp[i + 1] < 0) { this.comp[i + 1] = c; q[qt++] = i + 1; }
+        if (y > 0 && this.walk[i - this.w] && this.comp[i - this.w] < 0) { this.comp[i - this.w] = c; q[qt++] = i - this.w; }
+        if (y < this.h - 1 && this.walk[i + this.w] && this.comp[i + this.w] < 0) { this.comp[i + this.w] = c; q[qt++] = i + this.w; }
+      }
+      c++;
+    }
+  }
+
+  // Can a fighter standing at (x1, y1) walk to (x2, y2)? Positions on odd tiles snap to the nearest walkable one.
+  sameComp(x1, y1, x2, y2) {
+    const a = this.nearestWalk(Math.floor(x1 / TILE), Math.floor(y1 / TILE)), b = this.nearestWalk(Math.floor(x2 / TILE), Math.floor(y2 / TILE));
+    return a >= 0 && b >= 0 && this.comp[a] === this.comp[b];
   }
 
   tile(x, y) { return (Math.floor(y / TILE)) * this.w + Math.floor(x / TILE); }

@@ -54,7 +54,7 @@ export class Assets {
   drawRole(ctx, ts, role, x, y, tx, ty, seed = 0) {
     const frames = ts.roles[role];
     if (frames && frames.length && this.drawFrame(ctx, ts.sheet, this.pickFrame(frames, tx, ty, seed), x, y)) return;
-    const col = ts.placeholder && ts.placeholder[role];
+    const col = ts.placeholder && (ts.placeholder[role] || ts.placeholder[role.replace(/\d+$/, '')]);
     if (col) { ctx.fillStyle = col; ctx.fillRect(x, y, 16, 16); }
   }
 

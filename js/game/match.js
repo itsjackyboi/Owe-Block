@@ -1,4 +1,4 @@
-import { INTERNAL_W, INTERNAL_H, CAMERA, GRID_CELL, AI_COUNT, TIER_MIX } from '../config.js';
+import { INTERNAL_W, INTERNAL_H, CAMERA, GRID_CELL, AI_COUNT, TIER_MIX, NAMED_PER_MATCH } from '../config.js';
 import { RNG } from '../core/rng.js';
 import { SpatialHash } from '../core/grid.js';
 import { Camera } from '../core/renderer.js';
@@ -19,12 +19,14 @@ import { Crystals } from './crystals.js';
 import { Zone, drawZone } from './zone.js';
 import { Nav } from '../ai/nav.js';
 import { AIController } from '../ai/ai.js';
-import { pickHandles } from '../data/fighters.js';
+import { pickHandles, NAMED } from '../data/fighters.js';
+import { GANGS } from '../data/gangs.js';
+import { Hazards, drawDarkness } from './hazards.js';
 import { generateOffers, applyOffer, autoPick } from './levelup.js';
 import { drawHud } from '../ui/hud.js';
 import { drawText } from '../ui/font.js';
 import { buildMinimap } from '../ui/hud.js';
-import { drawLevelUp, drawDeath, drawVictory, cardRect } from '../ui/screens.js';
+import { drawLevelUp, drawDeath, drawWinHint, cardRect } from '../ui/screens.js';
 
 // One match: builds the world from a mode entry and runs the update order. Mode-agnostic.
 export class Match {
@@ -50,6 +52,7 @@ export class Match {
     this.feed = [];
     this.camera = new Camera();
     this.camera.shakeEnabled = game.settings.shake;
+    this.deadT = 0;
     this.fx = new Particles();
     this.projectiles = new Projectiles(this);
     this.areas = new Areas(this);
@@ -73,9 +76,14 @@ export class Match {
     this.spawnFighters(opts);
     this.spawnLoot();
     this.zone = new Zone(this, this.rng.fork(4), (this.mode.zone && this.mode.zone.scale) || 1);
-    this.minimap = buildMinimap(this.map);
+    this.hazards = new Hazards(this, this.mode.hazards);
+    this.lightRadius = this.hazards.lightRadius;   // AI sight shrinks to match the dark
+    this.minimap = buildMinimap(this.map, this.mode.palette);
     this.fx.cam = this.camera;
     this.camera.snapTo(this.player.x, this.player.y, this.map.pxW, this.map.pxH);
+    // draw the chunks around the start now so the first seconds do not hitch
+    const pcx = Math.floor(this.player.x / 256), pcy = Math.floor(this.player.y / 256);
+    for (let cy = Math.max(0, pcy - 1); cy <= Math.min(this.map.chunkRows - 1, pcy + 1); cy++) for (let cx = Math.max(0, pcx - 1); cx <= Math.min(this.map.chunkCols - 1, pcx + 1); cx++) this.map.chunk(cx, cy);
   }
 
   itemDef(id) { return ITEMS[id]; }
@@ -91,14 +99,16 @@ export class Match {
     const aiCount = opts.ai != null ? opts.ai | 0 : (dummies > 0 ? 0 : AI_COUNT);
     this.dummyCount = dummies; this.aiCount = aiCount;
     const a = this.game.assets, rng = this.rng.fork(2);
+    this.playerOutfit = ['red', 'blue'].includes(opts.color) ? opts.color : 'grey'; // your colours once you have joined a gang
     const sp = this.spreadSpawns(this.spawns, (opts.ai != null ? opts.ai | 0 : (dummies > 0 ? 0 : AI_COUNT)) + 1, rng);
     const first = sp.shift();
     this.player = new Fighter({
-      name: 'NEWCOMER', outfit: 'grey', isPlayer: true, x: first.x, y: first.y,
-      appearance: { body: 0, outfit: 'grey', hair: 1, hat: false },
+      name: 'NEWCOMER', outfit: this.playerOutfit, isPlayer: true, x: first.x, y: first.y,
+      appearance: { body: 0, outfit: this.playerOutfit, hair: 1, hat: this.playerOutfit !== 'grey' },
       controller: new PlayerController(this.game.input),
     });
     this.fighters.push(this.player);
+    if (opts.startWeapon && ITEMS[opts.startWeapon]) this.player.addItem(opts.startWeapon, 1); // the gang weapon you earned
 
     // test dummies stand on the spawn points nearest the player so they are visible straight away
     sp.sort((p, q) => Math.hypot(p.x - first.x, p.y - first.y) - Math.hypot(q.x - first.x, q.y - first.y));
@@ -132,6 +142,7 @@ export class Match {
         f.aim = f.intent.aim = rng.float(0, 6.28);
         this.fighters.push(f);
       }
+      this.makeNamed(rng, opts.named);
     }
 
     // sim mode: the "player" is a high-tier bot so whole matches can run unattended
@@ -139,6 +150,23 @@ export class Match {
       const p = this.player;
       p.isPlayer = false; p.tier = 'high'; p.name = 'SIMBOT';
       p.controller = new AIController(this, 'high', p.id);
+    }
+  }
+
+  // 3 to 5 named fighters (all of them with ?named=all) take over high-tier slots: signature item, HP x1.2, name tag, fixed look.
+  makeNamed(rng, forced) {
+    const high = this.fighters.filter((f) => f.tier === 'high' && !f.isPlayer && !f.named);
+    if (!high.length) return;
+    const pool = rng.shuffle(NAMED.slice());
+    const n = forced === 'all' ? NAMED.length : NAMED_PER_MATCH[0] + rng.int(0, NAMED_PER_MATCH[1] - NAMED_PER_MATCH[0] + 1);
+    for (let i = 0; i < n && i < high.length; i++) {
+      const d = pool[i], f = high[i];
+      const outfit = GANGS[d.gang].outfit;
+      f.named = true; f.name = d.name; f.title = d.title; f.outfit = outfit; f.prefers = d.prefers; f.namedId = d.id;
+      f.appearance = { body: d.look.body, outfit, hair: d.look.hair, hat: d.look.hat };
+      f.maxHp = Math.round(f.maxHp * (d.hpMul || 1.2)); f.hp = f.maxHp;
+      f.speedBonus = d.speedBonus || 0;
+      f.addItem(d.signature, 1);
     }
   }
 
@@ -197,6 +225,7 @@ export class Match {
   // A shrink just began: a light respawn wave of loot inside the new safe area.
   onZoneShrink(k) {
     this.feed.push({ t: this.time, text: 'THE SWEEP CLOSES IN', color: '#ff8a78' });
+    this.game.audio.sfx('siren');
     if (this.feed.length > 6) this.feed.shift();
     const L = this.mode.loot;
     if (!L) return;
@@ -233,6 +262,7 @@ export class Match {
     let alive = 0;
     for (const f of this.fighters) if (!f.dead) alive++;
     if (v.isPlayer) {
+      this.game.audio.sfx('death');
       this.placement = alive + 1;
       this.game.loop.stopFor(0.12);
       this.camera.addTrauma(0.6);
@@ -250,9 +280,10 @@ export class Match {
     if (this.levelUp) { this.updateLevelUp(input, dt); return; }
 
     this.time += dt;
+    if (this.player.dead) this.deadT += dt;
     this.nav.budget = 4;
-    if (input.keyPressed('KeyR') && (this.player.dead || this.won)) {
-      this.game.startMatch({ mode: this.mode.id, dummies: this.dummyCount, ai: this.aiCount });
+    if (input.keyPressed('KeyR') && this.player.dead) {
+      this.game.startMatch({ mode: this.mode.id, dummies: this.dummyCount, ai: this.aiCount, named: null });
       return;
     }
 
@@ -269,6 +300,7 @@ export class Match {
 
     for (let i = 0; i < fs.length; i++) updateItemUse(fs[i], this, dt);
     this.zone.update(dt);
+    this.hazards.update(dt);
     for (let i = this.timers.length - 1; i >= 0; i--) { const tm = this.timers[i]; tm.t -= dt; if (tm.t <= 0) { this.timers.splice(i, 1); tm.fn(); } }
     this.telegraphs.update(dt);
     this.crystals.update(dt);
@@ -313,6 +345,7 @@ export class Match {
   openLevelUp() {
     const p = this.player;
     const offers = generateOffers(p, this.rng);
+    if (offers.length) this.game.audio.sfx('levelup');
     p.pendingLevels--;
     if (!offers.length) return;
     this.levelUp = { offers, t: 0 };
@@ -349,6 +382,7 @@ export class Match {
 
     r.clear();
     this.map.draw(ctx, cam);
+    this.hazards.draw(ctx, cam);
     this.areas.draw(ctx, cam, this.player);
     this.pickups.draw(ctx, cam, g.assets);
     this.crystals.draw(ctx, cam);
@@ -369,16 +403,19 @@ export class Match {
     this.fx.draw(ctx, cam);
     drawZone(ctx, cam, this.zone, g.sprites, this.time);
 
-    // name tags over non-player fighters
+    drawDarkness(ctx, cam, this);
+
+    // name tags: named fighters (and test dummies) only
     for (let i = 0; i < list.length; i++) {
       const f = list[i];
-      if (f.isPlayer || !f.name) continue;
+      if (f.isPlayer || !f.name || !(f.named || f.dummy)) continue;
+      if (this.lightRadius && Math.hypot(f.x - p.x, f.y - p.y) > this.lightRadius * 0.95) continue; // in the dark you only see who is close
       drawText(ctx, f.name, Math.round(f.x - cam.rx), Math.round(f.y - cam.ry) - 20, { align: 'center', color: f.outfit === 'red' ? '#ff8a78' : '#8ab8ff' });
     }
 
     drawHud(ctx, this);
     if (this.levelUp) drawLevelUp(ctx, this, g.assets, input);
     else if (p.dead) drawDeath(ctx, this);
-    else if (this.won) drawVictory(ctx, this);
+    else if (this.won && !this.sim && g.state === 'match') drawWinHint(ctx, this);
   }
 }

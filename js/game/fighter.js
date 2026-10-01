@@ -176,6 +176,7 @@ export class Fighter {
       this.dashT = DASH.time * this.pDash; this.dashCdMax = DASH.cooldown * this.dashCdMul * this.pDashCd; this.dashCd = this.dashCdMax; this.invuln = DASH.invuln;
       this.cancelBusy();
       match.fx.dust(this.x, this.y + 4, 4);
+      match.sfx('dash', this.x, this.y);
     }
 
     if (this.dashing) {
@@ -223,7 +224,7 @@ export class Fighter {
         if (this.safeTimer <= 0) {
           this.safeTimer = PIT.safeInterval;
           const tx = Math.floor(this.x / TILE), ty = Math.floor(this.y / TILE);
-          if (map.tile(tx + 1, ty) !== T.PIT && map.tile(tx - 1, ty) !== T.PIT && map.tile(tx, ty + 1) !== T.PIT && map.tile(tx, ty - 1) !== T.PIT) {
+          if (map.tile(tx + 1, ty) !== T.PIT && map.tile(tx - 1, ty) !== T.PIT && map.tile(tx, ty + 1) !== T.PIT && map.tile(tx, ty - 1) !== T.PIT && !match.hazards.unsafe(tx, ty)) {
             this.lastSafeX = this.x; this.lastSafeY = this.y;
           }
         }

@@ -300,10 +300,10 @@ try {
     const roster = await ev(() => {
       const m = window.__oweblock.match, t = { low: 0, med: 0, high: 0 };
       for (const f of m.fighters) if (f.tier) t[f.tier]++;
-      return { n: m.fighters.length, t, onFloor: m.fighters.every((f) => m.map.tileAtPx(f.x, f.y) === 0), names: new Set(m.fighters.map((f) => f.name)).size, bare: m.fighters.every((f) => f.slots.every((x) => x === null)) };
+      return { n: m.fighters.length, t, onFloor: m.fighters.every((f) => m.map.tileAtPx(f.x, f.y) === 0), names: new Set(m.fighters.map((f) => f.name)).size, bare: m.fighters.filter((f) => !f.named).every((f) => f.slots.every((x) => x === null)), named: m.fighters.filter((f) => f.named).length, namedArmed: m.fighters.filter((f) => f.named).every((f) => f.slots.some((x) => x)), tags: m.fighters.filter((f) => f.named).every((f) => f.tier === 'high') };
     });
-    check(roster.n === 41 && roster.t.low === 15 && roster.t.med === 15 && roster.t.high === 11 && roster.onFloor && roster.names === 41 && roster.bare,
-      `41 fighters, tier mix 15/15/10 (+1 high-tier sim bot), unique names, all on floor, all start with bare knuckles ${JSON.stringify(roster.t)}`);
+    check(roster.n === 41 && roster.t.low === 15 && roster.t.med === 15 && roster.t.high === 11 && roster.onFloor && roster.names === 41 && roster.bare && roster.named >= 3 && roster.named <= 5 && roster.namedArmed && roster.tags,
+      `41 fighters, tier mix 15/15/10 (+1 high-tier sim bot), unique names, all on floor, only the ${roster.named} named fighters start armed ${JSON.stringify(roster.t)}`);
 
     // zone geometry: every target lies inside the last and contains the final point; timeline is about 6:35 x scale
     const zg = await ev(() => {
@@ -613,6 +613,186 @@ try {
     await ctx.close();
   }
 
+  // 2h. Stage 5: three modes, hazards, named fighters
+  {
+    const { page, ctx, errors } = await open('?debug=1&sim=1&manual=1&seed=5&named=all', { viewport: { width: 960, height: 540 } });
+    const R = (fn, arg) => page.evaluate(fn, arg);
+    const named = await R(() => { const m = window.__oweblock.match; return m.fighters.filter((f) => f.named).map((f) => ({ id: f.namedId, name: f.name, hp: f.maxHp, items: f.slots.filter(Boolean).map((s) => s.id), outfit: f.outfit, speed: f.speedBonus, tier: f.tier })); });
+    const byId = Object.fromEntries(named.map((n) => [n.id, n]));
+    check(named.length === 10 && !!byId.krag && !!byId.zaar && byId.krag.items[0] === 'krags_cleaver' && byId.zaar.items[0] === 'zaars_edges' && byId.krag.outfit === 'red' && byId.zaar.outfit === 'blue', `named roster: signature weapons and gang colours (Krag red + Cleaver, Zaar blue + Edges), ${named.length} fit in the 10 high-tier slots`);
+    check(byId.fin && byId.fin.hp === Math.round(150 * 0.9) && byId.fin.speed === 0.25 && byId.fin.items[0] === 'shiv' && byId.krag.hp === 180, `Fin has HP x0.9 and +25% speed, the others HP x1.2 (${byId.fin && byId.fin.hp}, ${byId.krag.hp})`);
+    const count = await R(async () => { // 3 to 5 per match when not forced
+      const { Match } = await import(new URL('js/game/match.js', location.href).href);
+      const g = window.__oweblock.game; const seen = new Set();
+      for (let s = 1; s <= 12; s++) { const m = new Match(g, { mode: 'mines', seed: s, ai: 40 }); seen.add(m.fighters.filter((f) => f.named).length); }
+      return [...seen].sort();
+    });
+    check(count.every((n) => n >= 3 && n <= 5) && count.length >= 2, `3 to 5 named fighters per match, varying (${count})`);
+
+    for (const mode of ['mines', 'rooftops', 'pipepit']) {
+      const r = await R(async (mode) => {
+        const { Match } = await import(new URL('js/game/match.js', location.href).href);
+        const { Nav } = await import(new URL('js/ai/nav.js', location.href).href);
+        const g = window.__oweblock.game;
+        const m = new Match(g, { mode, seed: 9, ai: 40 });
+        const nav = new Nav(m.map);
+        // floor-only reachability from the first spawn (pits and gaps block walking here)
+        const w = m.map.w, dist = nav.buildFlow([nav.tile(m.player.x, m.player.y)]);
+        const unreachable = m.fighters.filter((f) => dist[nav.tile(f.x, f.y)] < 0).length;
+        let loot = 0, items = 0, relics = 0; for (const p of m.pickups.pool.active) if (p.kind === 'item') { items++; if (m.itemDef(p.id).rarity === 'relic') relics++; }
+        const vaultFloor = m.gen.vaultPoints.filter((p) => dist[nav.tile(p.x, p.y)] < 0).length;
+        for (let i = 0; i < 600; i++) m.update(1 / 60); // ten seconds in, hazards running
+        return { n: m.fighters.length, unreachable, items, relics, vaults: m.gen.vaultPoints.length, vaultFloor, size: [m.map.w, m.map.h], tiles: m.map.tiles.length, hazards: m.hazards.defs.map((d) => d.type), alive: m.fighters.filter((f) => !f.dead).length };
+      }, mode);
+      const want = { mines: [150, 150], rooftops: [100, 100], pipepit: [110, 110] }[mode];
+      check(r.n === 41 && r.unreachable === 0 && r.size[0] === want[0] && r.items >= 30 && r.items <= 70, `${mode}: ${r.size.join('x')} map, all 41 fighters start on connected ground, ${r.items} items at the start, hazards ${r.hazards}`);
+      if (mode === 'rooftops') check(r.vaults >= 8 && r.vaultFloor === r.vaults, `rooftops: the vault roofs cannot be walked to (${r.vaultFloor}/${r.vaults} vault spots cut off), ${r.relics} relics lying about`);
+    }
+
+    // hazards
+    const cave = await R(() => { const { Hazards } = window.__haz || {}; return null; });
+    void cave;
+    const mines = await R(async () => {
+      const { Match } = await import(new URL('js/game/match.js', location.href).href);
+      const g = window.__oweblock.game, m = new Match(g, { mode: 'mines', seed: 4, ai: 0, dummies: 0 });
+      const p = m.player; p.hp = p.maxHp = 500; p.controller = null;
+      m.hazards.caveT = 99; // trigger one on purpose
+      let spot = null; for (const c of m.chambers) { const x = (c.x + 0.5) * 16, y = (c.y + 0.5) * 16; if (m.map.tileAtPx(x, y) === 0) { spot = { x, y }; break; } }
+      p.teleport(spot.x, spot.y);
+      m.telegraphs.add({ type: 'ring', x: spot.x, y: spot.y, r: 22, dur: 1.2, color: '#ffffff' }); m.later(1.2, () => m.hazards.collapse(spot.x, spot.y));
+      const warned = m.telegraphs.count; const hp0 = p.hp;
+      for (let i = 0; i < 60; i++) m.update(1 / 60);
+      const mid = p.hp; for (let i = 0; i < 20; i++) m.update(1 / 60);
+      return { warned, early: hp0 - mid, hit: hp0 - p.hp, stun: p.st.stun, light: m.lightRadius };
+    });
+    check(mines.warned >= 1 && mines.early === 0 && mines.hit === 25 && mines.stun > 0 && mines.light === 130, `mines: cave-in telegraphs for 1.2 s, then 25 damage and a stun; light radius ${mines.light}`);
+    const sky = await R(async () => {
+      const { Match } = await import(new URL('js/game/match.js', location.href).href);
+      const g = window.__oweblock.game, m = new Match(g, { mode: 'rooftops', seed: 4, ai: 0 });
+      const p = m.player; p.controller = null; p.hp = p.maxHp = 200;
+      const s = m.gen.skylights[0], cx = (s.tx + 0.5) * 16, cy = (s.ty + 0.5) * 16;
+      const safeX = p.x, safeY = p.y; p.lastSafeX = safeX; p.lastSafeY = safeY;
+      p.teleport(cx, cy); p.lastSafeX = safeX; p.lastSafeY = safeY;
+      for (let i = 0; i < 50; i++) m.update(1 / 60); const before = { hp: p.hp, tile: m.map.tile(s.tx, s.ty) };
+      for (let i = 0; i < 30; i++) m.update(1 / 60);
+      return { before, hp: p.hp, tile: m.map.tile(s.tx, s.ty), stun: p.st.stun, back: Math.hypot(p.x - safeX, p.y - safeY) < 20 };
+    });
+    check(sky.before.hp === 200 && sky.hp === 170 && sky.tile === 2 && sky.back, `rooftops: a skylight holds for 1 s, then you fall: 15% max HP (${200 - sky.hp}) and back to the last safe roof`);
+    const gap = await R(async () => {
+      const { Match } = await import(new URL('js/game/match.js', location.href).href);
+      const g = window.__oweblock.game, m = new Match(g, { mode: 'rooftops', seed: 6, ai: 0 });
+      const p = m.player; p.controller = null; p.hp = p.maxHp = 100;
+      let gapTile = null;
+      for (let ty = 5; ty < m.map.h - 5 && !gapTile; ty++) for (let tx = 5; tx < m.map.w - 5; tx++) if (m.map.tile(tx, ty) === 2 && m.map.tile(tx, ty - 1) === 0 && m.map.tile(tx, ty + 1) === 2 && m.map.tile(tx, ty + 2) === 0 && m.map.tile(tx + 1, ty - 1) === 0 && m.map.tile(tx + 1, ty + 2) === 0) { gapTile = { tx, ty }; break; } // a clean two-tile gap
+      const sx = (gapTile.tx + 0.5) * 16, sy = (gapTile.ty - 1 + 0.5) * 16; p.teleport(sx, sy); p.lastSafeX = sx; p.lastSafeY = sy;
+      p.intent.my = 1; for (let i = 0; i < 40; i++) m.update(1 / 60); p.intent.my = 0;
+      const walked = { hp: p.hp, stun: p.st.stun };
+      // a dash across a two-tile gap does not fall
+      p.hp = 100; p.st.stun = 0; p.teleport(sx, sy); p.dashCd = 0; p.intent.my = 1; p.intent.dash = true; m.update(1 / 60); p.intent.dash = false; for (let i = 0; i < 20; i++) m.update(1 / 60);
+      return { walked, dashHp: p.hp };
+    });
+    check(gap.walked.hp === 85 && gap.walked.stun > 0.1 && gap.dashHp === 100, `rooftops gaps: walking in costs 15% HP and a stun (${gap.walked.hp}), a dash crosses them (${gap.dashHp})`);
+    const pipe = await R(async () => {
+      const { Match } = await import(new URL('js/game/match.js', location.href).href);
+      const g = window.__oweblock.game, m = new Match(g, { mode: 'pipepit', seed: 4, ai: 0 });
+      const p = m.player; p.controller = null; p.hp = p.maxHp = 400;
+      let t = null; for (let i = 0; i < m.map.conv.length; i++) if (m.map.conv[i] === 1 && m.map.conv[i + 1] === 1 && m.map.conv[i + 2] === 1 && m.map.conv[i + 3] === 1) { t = i; break; }
+      const tx = t % m.map.w, ty = (t / m.map.w) | 0; p.teleport((tx + 0.5) * 16, (ty + 0.5) * 16); const x0 = p.x;
+      for (let i = 0; i < 30; i++) m.update(1 / 60);
+      const pushed = p.x - x0;
+      // steam vent: hiss telegraph, then a burst
+      const v = m.hazards.vents[0]; p.teleport(v.x + 4, v.y); p.hp = 400; v.state = 'hiss'; v.t = 0; v.hit.length = 0; m.telegraphs.add({ type: 'ring', x: v.x, y: v.y, r: 24, dur: 1, color: '#fff' });
+      for (let i = 0; i < 50; i++) m.update(1 / 60); const hissHp = p.hp;
+      for (let i = 0; i < 40; i++) m.update(1 / 60);
+      return { pushed, vents: m.hazards.vents.length, hissHp, hp: p.hp };
+    });
+    check(pipe.pushed > 8 && pipe.vents >= 8 && pipe.hissHp === 400 && pipe.hp <= 380, `pipe pit: conveyors push (${pipe.pushed.toFixed(0)}px in half a second), ${pipe.vents} steam vents hiss, then burst for 20 (${400 - pipe.hp})`);
+    check(errors.length === 0, 'mode scenarios ran with no console errors ' + errors.join(' | '));
+    await ctx.close();
+  }
+
+  // 2i. Stage 6: menus, pause, saves, win and summary flow, options, audio
+  {
+    const { page, ctx, errors } = await open('?debug=1&menu=1&seed=8', { viewport: { width: 1440, height: 810 } });
+    const R = (fn, arg) => page.evaluate(fn, arg);
+    const wait = (ms) => page.waitForTimeout(ms);
+    const state = () => R(() => window.__oweblock.state);
+    const save = () => R(() => JSON.parse(localStorage.getItem('oweblock.save.v1') || 'null'));
+    check((await state()) === 'title', 'title screen first');
+    await page.screenshot({ path: join(outDir, '07-title.png') });
+    await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); await wait(150);
+    check((await state()) === 'modes', 'title menu: down + enter opens mode select');
+    await page.screenshot({ path: join(outDir, '08-modes.png') });
+    await page.keyboard.press('Digit2'); await page.keyboard.press('Enter'); await wait(400);
+    check((await state()) === 'match' && (await R(() => window.__oweblock.match.mode.id)) === 'rooftops' && (await save()).lastMode === 'rooftops', 'mode select: 2 + enter starts Rooftops and remembers it');
+
+    // pause
+    await page.keyboard.press('Escape'); await wait(100);
+    const t0 = await R(() => window.__oweblock.match.time); await wait(500); const t1 = await R(() => window.__oweblock.match.time);
+    check((await state()) === 'paused' && t1 === t0, 'Esc pauses the match (time frozen)');
+    await page.screenshot({ path: join(outDir, '09-pause.png') });
+    await page.keyboard.press('Escape'); await wait(150);
+    check((await state()) === 'match', 'Esc resumes');
+
+    // death -> summary -> title, and the match is recorded
+    await R(() => { const g = window.__oweblock.game, m = g.match; m.player.kills = 3; window.__oweblock.damageFrom(m.fighters[1], m.player, 9999); });
+    await wait(1500);
+    await page.screenshot({ path: join(outDir, '10-death.png') });
+    await page.keyboard.press('Enter'); await wait(300);
+    check((await state()) === 'summary', 'death: Enter shows the summary');
+    await page.screenshot({ path: join(outDir, '11-summary.png') });
+    const s1 = await save();
+    check(s1.history.length === 1 && s1.history[0].mode === 'rooftops' && s1.history[0].kills === 3 && s1.totals.matches === 1 && s1.best.placement >= 2, `the match is recorded (history ${s1.history.length}, best placement #${s1.best.placement})`);
+    await page.keyboard.press('Enter'); await wait(300);
+    check((await state()) === 'title', 'summary leads back to the title');
+
+    // win -> gang choice -> unlock, colour and start weapon
+    await R(() => window.__oweblock.game.startMatch({ mode: 'mines', ai: 3, seed: 2 }));
+    await R(() => window.__oweblock.killAllAI()); await wait(2600);
+    check((await state()) === 'win', 'last one standing opens the gang choice');
+    await page.screenshot({ path: join(outDir, '12-win.png') });
+    await page.keyboard.press('Digit1'); await wait(300);
+    const s2 = await save();
+    check((await state()) === 'summary' && s2.unlocked.cutters && !s2.unlocked.circus && s2.color === 'red' && s2.startWeapon === 'krags_cleaver' && s2.history[0].placement === 1, 'choosing Crimson Cutters unlocks Krag\'s Cleaver and the red colours, and records the win');
+    await page.screenshot({ path: join(outDir, '13-summary-win.png') });
+    await page.keyboard.press('Enter'); await wait(200);
+    await R(() => window.__oweblock.game.startMatch({ mode: 'mines', ai: 2, seed: 3 }));
+    const sw = await R(() => { const p = window.__oweblock.match.player; return { outfit: p.outfit, items: p.slots.filter(Boolean).map((s) => s.id) }; });
+    check(sw.outfit === 'red' && sw.items[0] === 'krags_cleaver', 'the next run starts in red holding Krag\'s Cleaver');
+
+    // unlocks / stats screen + options
+    await R(() => window.__oweblock.game.go('unlocks')); await wait(150);
+    await page.keyboard.press('ArrowRight'); await wait(100);
+    await page.screenshot({ path: join(outDir, '14-unlocks.png') });
+    check((await save()).color === 'grey', 'unlocks screen: left/right changes the start colour');
+    await R(() => window.__oweblock.game.go('options')); await wait(150);
+    await page.keyboard.press('Enter'); await wait(80); await page.keyboard.press('ArrowDown'); await wait(80); await page.keyboard.press('ArrowLeft'); await wait(80); await page.keyboard.press('ArrowLeft'); await wait(100);
+    await page.screenshot({ path: join(outDir, '15-options.png') });
+    const s3 = await save();
+    check(s3.settings.shake === false && Math.abs(s3.settings.volumes.master - 0.6) < 0.01, `options: shake toggle and volume steps are saved (shake ${s3.settings.shake}, master ${s3.settings.volumes.master})`);
+    await page.reload(); await wait(700);
+    const reloaded = await R(() => ({ shake: window.__oweblock.game.settings.shake, master: window.__oweblock.game.settings.volumes.master, unlocked: window.__oweblock.game.save.data.unlocked.cutters }));
+    check(reloaded.shake === false && Math.abs(reloaded.master - 0.6) < 0.01 && reloaded.unlocked, 'settings and unlocks survive a reload');
+
+    // audio engine: context starts on a gesture, voices are capped, far sounds are culled, the sequencer advances
+    await page.mouse.click(300, 300); await wait(200);
+    await R(() => window.__oweblock.game.startMatch({ mode: 'pipepit', ai: 5, seed: 2 })); await wait(600);
+    const au = await R(() => {
+      const a = window.__oweblock.game.audio, m = window.__oweblock.match;
+      const ready = a.ready, track = a.trackId;
+      for (let i = 0; i < 40; i++) a.sfx('hit', m.player.x, m.player.y, m.camera);
+      const voices = a.voices;
+      a.voices = 0; a.sfx('hit', m.player.x + 3000, m.player.y, m.camera); const far = a.voices;
+      return { ready, track, voices, far, step: a.step, vol: a.master && a.master.gain.value };
+    });
+    await wait(500);
+    const step2 = await R(() => window.__oweblock.game.audio.step);
+    check(au.ready && au.track === 'pipepit' && au.voices <= 12 && au.voices >= 1 && au.far === 0, `audio: context on first gesture, pipepit track playing, ${au.voices} voices (cap 12), distant sound culled`);
+    check(step2 !== au.step, 'audio: the sequencer is advancing through the pattern');
+    check(errors.length === 0, 'menus and audio ran with no console errors ' + errors.join(' | '));
+    await ctx.close();
+  }
+
   // 2c. stress: ~300 projectiles and ~1000 particles in view must stay inside the frame budget
   {
     const { page, ctx, errors } = await open('?debug=1&seed=7&dummies=40', { viewport: { width: 960, height: 540 } });
@@ -651,6 +831,13 @@ try {
   }
 
   // 3. placeholders stay playable
+  for (const mode of ['rooftops', 'pipepit']) {
+    const { page, ctx, errors } = await open('?debug=1&seed=7&placeholders=1&mode=' + mode);
+    await page.keyboard.down('KeyD'); await page.waitForTimeout(500); await page.keyboard.up('KeyD');
+    await page.screenshot({ path: join(outDir, '03-placeholders-' + mode + '.png') });
+    check(errors.length === 0, `?placeholders=1 on ${mode} runs with no console errors ` + errors.join(' | '));
+    await ctx.close();
+  }
   {
     const { page, ctx, errors } = await open('?debug=1&seed=7&dummies=6&placeholders=1');
     await page.keyboard.down('KeyD'); await page.waitForTimeout(400); await page.keyboard.up('KeyD');
