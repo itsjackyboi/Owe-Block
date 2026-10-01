@@ -59,8 +59,25 @@ export function applyOffer(match, f, o) {
   else if (o.type === 'upgrade') { const s = f.slots[o.slot]; if (s) s.setLevel(s.level + 1); }
 }
 
-// Non-player policy: random pick. Stage 3 replaces this with a per-tier policy.
+// Non-player policy by tier. Low tier picks at random; med prefers gear over stats; high scores each option.
+const GOOD_STATS = { damage: 0.5, cd: 0.45, maxhp: 0.35, armor: 0.25, move: 0.2 };
+
+export function pickOffer(f, offers, rng) {
+  const tier = f.tier || 'med';
+  if (tier === 'low') return offers[rng.int(0, offers.length)];
+  let best = null, bs = -1;
+  const held = f.slots[f.held];
+  for (const o of offers) {
+    let sc = rng.float(0, tier === 'high' ? 0.15 : 0.5);
+    if (o.type === 'item') sc += 0.7;
+    else if (o.type === 'upgrade') sc += 0.8 + (tier === 'high' && held && held.id === o.id ? 0.7 : 0);
+    else sc += tier === 'high' ? (GOOD_STATS[o.id] || 0.1) : 0.3;
+    if (sc > bs) { bs = sc; best = o; }
+  }
+  return best;
+}
+
 export function autoPick(match, f) {
   const offers = generateOffers(f, match.rng);
-  if (offers.length) applyOffer(match, f, offers[match.rng.int(0, offers.length)]);
+  if (offers.length) applyOffer(match, f, pickOffer(f, offers, match.rng));
 }

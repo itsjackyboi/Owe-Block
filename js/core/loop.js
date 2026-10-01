@@ -11,6 +11,7 @@ export class Loop {
     this.last = 0;
     this.running = false;
     this.fixedDt = FIXED_DT;
+    this.maxSteps = MAX_STEPS;
     // perf: ring buffers of the last 600 frames
     this.updMs = new Float32Array(600);
     this.renMs = new Float32Array(600);
@@ -48,12 +49,12 @@ export class Loop {
 
     const t0 = performance.now();
     let steps = 0;
-    while (this.acc >= this.fixedDt && steps < MAX_STEPS) {
+    while (this.acc >= this.fixedDt && steps < this.maxSteps) {
       this.update(this.fixedDt);
       this.acc -= this.fixedDt;
       steps++;
     }
-    if (steps === MAX_STEPS) this.acc = 0; // drop the backlog rather than spiral
+    if (steps === this.maxSteps) this.acc = 0; // drop the backlog rather than spiral
     const t1 = performance.now();
     this.render(this.acc / this.fixedDt, frame || 1 / 60);
     const t2 = performance.now();

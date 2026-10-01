@@ -14,7 +14,9 @@ export const CHUNK_TILES = 16; // 16 tiles * 16 px = 256 px chunk canvases
 
 export const FIGHTER = {
   radius: 5,
-  hp: 100,
+  hp: 150,
+  idleRegenAfter: 5,   // seconds without taking damage before out-of-combat regen starts
+  idleRegen: 2,        // hp per second
   speed: 110,
   accel: 1400,
 };

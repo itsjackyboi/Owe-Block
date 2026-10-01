@@ -9,7 +9,7 @@ export function generateMines(rng, w, h) {
   // 1. chamber centres, spread with Poisson-disc sampling
   const margin = 12;
   let centres = poissonDisc(rng, w - margin * 2, h - margin * 2, 21, 24, margin, margin);
-  centres = rng.shuffle(centres).slice(0, 26);
+  centres = rng.shuffle(centres).slice(0, Math.round((w * h) / 600));
   const chambers = centres.map((c) => ({ x: c.x, y: c.y, r: rng.float(5, 10.5), depth: 0 }));
   for (const c of chambers) carveBlob(tiles, w, h, c.x, c.y, c.r, rng);
 
@@ -85,7 +85,7 @@ export function generateMines(rng, w, h) {
     let ok = true;
     for (const s of spawns) if ((s.tx - p.x) ** 2 + (s.ty - p.y) ** 2 < 36) { ok = false; break; }
     if (ok) spawns.push({ tx: p.x, ty: p.y, x: (p.x + 0.5) * TILE, y: (p.y + 0.5) * TILE });
-    if (spawns.length >= 80) break;
+    if (spawns.length >= 110) break;
   }
 
   // 7. loot candidates: clusters inside chambers, a vault in the deepest chamber, scattered XP spots
@@ -104,7 +104,7 @@ export function generateMines(rng, w, h) {
     const n = rng.int(2, 6);
     for (let k = 0; k < n; k++) { const pt = spot(c.x, c.y, c.r * 0.8); if (pt) { pt.chamber = c === deepest ? 'vault' : 'chamber'; (c === deepest ? vaultPoints : lootPoints).push(pt); } }
   }
-  for (const f of open.slice(0, 900)) xpPoints.push({ x: (f.x + 0.5) * TILE, y: (f.y + 0.5) * TILE });
+  for (const f of open.slice(0, 1400)) xpPoints.push({ x: (f.x + 0.5) * TILE, y: (f.y + 0.5) * TILE });
 
   return { w, h, tiles, deco, chambers: live, spawns, lootPoints, vaultPoints, xpPoints, vault: deepest };
 }

@@ -37,6 +37,9 @@ export class Fighter {
     this.level = 1; this.xp = 0; this.xpTotal = 0; this.pendingLevels = 0;
     this.moveBonus = 0; this.dmgMul = 1; this.cdMul = 1; this.dashCdMul = 1; this.pickupMul = 1; this.armor = 0; this.regen = 0;
     this.kills = 0; this.damageDealt = 0; this.damageTaken = 0;
+    this.tier = opts.tier || null;      // AI skill tier id, null for the player and dummies
+    this.exposure = 0;                  // seconds continuously outside the police sweep
+    this.deathKind = null; this.lastKind = null;
 
     // items: SLOT_COUNT slots, one held; an empty (or silenced) hand uses bare knuckles
     this.slots = new Array(SLOT_COUNT).fill(null);
@@ -114,7 +117,9 @@ export class Fighter {
 
     updateStatuses(this, dt, match);
     if (this.dead) return;
-    if (this.regen > 0 && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + this.regen * dt);
+    let rg = this.regen;
+    if (match.time - this.lastHurtT > FIGHTER.idleRegenAfter) rg += FIGHTER.idleRegen;
+    if (rg > 0 && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + rg * dt);
     if (this.dashCd > 0) this.dashCd -= dt;
     if (this.invuln > 0) this.invuln -= dt;
     if (this.hitFlash > 0) this.hitFlash -= dt;

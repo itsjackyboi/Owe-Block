@@ -34,13 +34,25 @@ export class Game {
 
   start() {
     const mode = this.params.get('mode');
-    if (mode || this.params.has('debug')) this.startMatch({ mode, seed: this.params.get('seed'), dummies: this.params.get('dummies') });
-    this.loop.start();
+    const sim = this.params.has('sim');
+    if (mode || sim || this.params.has('debug')) this.startMatch(this.startOpts());
+    if (sim) {
+      const speed = Math.max(1, Number(this.params.get('speed')) || 1);
+      this.loop.timeScale = speed;
+      this.loop.maxSteps = Math.ceil(speed) + 2;
+    }
+    if (!this.params.has('manual')) this.loop.start(); // ?manual=1: the test runner steps the match itself
+  }
+
+  // Options for a new match, read from the URL: seed, dummies, ai (count), sim.
+  startOpts() {
+    const q = this.params;
+    return { mode: q.get('mode'), seed: q.get('seed'), dummies: q.get('dummies'), ai: q.get('ai'), sim: q.has('sim') };
   }
 
   startMatch(opts) {
     const seed = opts.seed != null && opts.seed !== '' ? Number(opts.seed) : undefined;
-    this.match = new Match(this, { mode: opts.mode, seed, dummies: Number(opts.dummies) || 0 });
+    this.match = new Match(this, { mode: opts.mode, seed, dummies: Number(opts.dummies) || 0, ai: opts.ai != null && opts.ai !== '' ? Number(opts.ai) : null, sim: !!opts.sim });
     this.state = 'match';
   }
 
@@ -51,7 +63,7 @@ export class Game {
     this.titleT += dt;
     if (this.state === 'title') {
       if (input.keyPressed('Enter') || input.keyPressed('Space') || input.mousePressed[0]) {
-        this.startMatch({ mode: this.params.get('mode'), seed: this.params.get('seed'), dummies: this.params.get('dummies') });
+        this.startMatch(this.startOpts());
       }
     } else if (this.state === 'match') {
       this.match.update(dt);

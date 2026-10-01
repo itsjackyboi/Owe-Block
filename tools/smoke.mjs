@@ -1,39 +1,18 @@
 // Smoke + sim runner. Uses the globally installed Playwright with the preinstalled Chromium (never run `playwright install`).
 //   node tools/smoke.mjs [--out dir] [--port 8099]
 // Starts its own static server, loads the game, fails on any console error, takes screenshots, and checks core behaviour.
-import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve, dirname } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createRequire } from 'node:module';
+import { mkdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { root, loadPlaywright, startSite } from './lib.mjs';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const opt = (name, def) => { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] : def; };
 const outDir = resolve(opt('out', join(root, 'tools', 'out')));
 const port = +opt('port', 8099);
 mkdirSync(outDir, { recursive: true });
 
-async function loadPlaywright() {
-  const candidates = [process.env.PLAYWRIGHT_MODULE, 'playwright', join(process.execPath, '..', '..', 'lib', 'node_modules', 'playwright', 'index.mjs')];
-  for (const c of candidates) {
-    if (!c) continue;
-    try {
-      const spec = c.startsWith('/') ? pathToFileURL(c).href : createRequire(import.meta.url).resolve(c);
-      const m = await import(spec);
-      return m.chromium ? m : m.default;
-    } catch { /* try next */ }
-  }
-  throw new Error('Playwright not found; set PLAYWRIGHT_MODULE to its index.mjs');
-}
-
-// Serve the repo under /Owe-Block/ so a GitHub Pages subpath is exercised (all asset paths must be relative).
-const siteRoot = mkdtempSync(join(tmpdir(), 'oweblock-'));
-symlinkSync(root, join(siteRoot, 'Owe-Block'));
-const server = spawn('http-server', [siteRoot, '-p', String(port), '-c-1', '-s'], { stdio: 'ignore' });
-const base = `http://localhost:${port}/Owe-Block/`;
-await new Promise((r) => setTimeout(r, 1200));
+const site = await startSite(port);
+const base = site.base;
 
 const failures = [];
 const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) failures.push(msg); };
@@ -102,7 +81,7 @@ try {
     });
     await page.waitForTimeout(150);
     const fell = await P();
-    check(!pit.ok || (fell.hp === 80), `falling into a pit costs 20 HP and returns to safe ground (hp ${fell.hp})`);
+    check(!pit.ok || Math.abs(fell.hp - 80) < 1, `falling into a pit costs 20 HP and returns to safe ground (hp ${fell.hp})`);
 
     await page.mouse.move(700, 300);
     await page.waitForTimeout(2500);
@@ -313,6 +292,151 @@ try {
     await ctx.close();
   }
 
+  // 2d. Stage 3: AI, navigation, zone, determinism
+  {
+    const { page, ctx, errors } = await open('?debug=1&sim=1&manual=1&seed=11', { viewport: { width: 960, height: 540 } });
+    const ev = (fn, arg) => page.evaluate(fn, arg);
+
+    const roster = await ev(() => {
+      const m = window.__oweblock.match, t = { low: 0, med: 0, high: 0 };
+      for (const f of m.fighters) if (f.tier) t[f.tier]++;
+      return { n: m.fighters.length, t, onFloor: m.fighters.every((f) => m.map.tileAtPx(f.x, f.y) === 0), names: new Set(m.fighters.map((f) => f.name)).size, bare: m.fighters.every((f) => f.slots.every((x) => x === null)) };
+    });
+    check(roster.n === 41 && roster.t.low === 15 && roster.t.med === 15 && roster.t.high === 11 && roster.onFloor && roster.names === 41 && roster.bare,
+      `41 fighters, tier mix 15/15/10 (+1 high-tier sim bot), unique names, all on floor, all start with bare knuckles ${JSON.stringify(roster.t)}`);
+
+    // zone geometry: every target lies inside the last and contains the final point; timeline is about 6:35 x scale
+    const zg = await ev(() => {
+      const z = window.__oweblock.match.zone, T = z.targets;
+      let prev = { x0: 0, y0: 0, x1: z.W, y1: z.H }, nested = true, holds = true;
+      for (let k = 0; k < 4; k++) {
+        const t = T[k];
+        nested = nested && t.x0 >= prev.x0 - 1 && t.y0 >= prev.y0 - 1 && t.x1 <= prev.x1 + 1 && t.y1 <= prev.y1 + 1;
+        holds = holds && z.fx >= t.x0 && z.fx <= t.x1 && z.fy >= t.y0 && z.fy <= t.y1;
+        prev = t;
+      }
+      return { nested, holds, total: z.total, label: z.label().text, frac: [0, 1, 2, 3].map((k) => +((T[k].x1 - T[k].x0) / z.W).toFixed(2)) };
+    });
+    check(zg.nested && zg.holds, `zone targets nest and always contain the final point (sizes ${zg.frac})`);
+    check(zg.label.startsWith('SWEEP IN 1:'), `HUD timer starts as "${zg.label}"`);
+
+    // determinism: same seed, same 60 s of play
+    const sig = () => ev(() => { const m = window.__oweblock.match; for (let i = 0; i < 3600; i++) m.update(1 / 60); return m.fighters.map((f) => [Math.round(f.x), Math.round(f.y), Math.round(f.hp), f.dead ? 1 : 0].join(',')).join(';'); });
+    const a = await sig();
+    await page.goto(base + '?debug=1&sim=1&manual=1&seed=11'); await page.waitForTimeout(500);
+    const b = await sig();
+    check(a === b, 'same seed gives an identical 60 s of AI play');
+
+    // AI behaviour after a minute: armed, levelled, spread out, A* within budget
+    const st = await ev(() => {
+      const m = window.__oweblock.match, alive = m.fighters.filter((f) => !f.dead);
+      const maxReq = m.nav.requests / m.time;
+      return { alive: alive.length, armed: alive.filter((f) => f.item !== f.fists).length, lv: Math.max(...m.fighters.map((f) => f.level)), kills: m.fighters.reduce((n, f) => n + f.kills, 0), rate: maxReq, flows: m.nav.flows.size };
+    });
+    check(st.armed >= st.alive * 0.6 && st.lv >= 2 && st.kills > 5, `after 1:00: ${st.alive} alive, ${st.armed} armed, top level ${st.lv}, ${st.kills} kills`);
+    check(st.rate < 240, `A* requests stay within budget (${st.rate.toFixed(1)}/s, cap 240/s)`);
+
+    // zone damage: standing outside during the sweep hurts, and hurts more the longer you stay
+    const zd = await ev(() => {
+      const m = window.__oweblock.match, z = m.zone;
+      for (let i = 0; i < 40 * 60 && !(z.dps > 0); i++) m.update(1 / 60);
+      for (let i = 0; i < 28 * 60; i++) m.update(1 / 60); // let the rectangle close in a little
+      const f = m.fighters.find((q) => !q.dead && q.isPlayer === false && q.tier === 'low') || m.fighters.find((q) => !q.dead);
+      f.controller.update = () => {}; f.intent.mx = f.intent.my = 0; f.intent.use = f.intent.special = false;
+      f.hp = f.maxHp = 1000; f.lastHurtT = m.time + 999; // no idle regen muddying the numbers
+      // find a floor spot outside the rectangle
+      let spot = null;
+      for (let i = 0; i < m.map.tiles.length && !spot; i += 3) if (m.map.tiles[i] === 0) { const x = ((i % m.map.w) + 0.5) * 16, y = (((i / m.map.w) | 0) + 0.5) * 16; if (!z.inside(x, y)) spot = { x, y }; }
+      f.teleport(spot.x, spot.y);
+      const hp0 = f.hp, dps = z.dps;
+      for (let i = 0; i < 2 * 60; i++) { m.update(1 / 60); f.lastHurtT = m.time + 999; f.x = f.px = spot.x; f.y = f.py = spot.y; }
+      const first = hp0 - f.hp, hp1 = f.hp;
+      for (let i = 0; i < 4 * 60; i++) { m.update(1 / 60); f.lastHurtT = m.time + 999; f.x = f.px = spot.x; f.y = f.py = spot.y; }
+      return { dps, first, second: hp1 - f.hp, phase: z.phase.kind, dead: f.dead };
+    });
+    check(zd.dps > 0 && zd.first > 0 && zd.second / 4 > zd.first / 2, `outside the sweep hurts and the damage ramps with exposure (${zd.first.toFixed(1)} hp in first 2s, ${(zd.second / 4).toFixed(1)}/s over the next 4s at ${zd.dps} base dps)`);
+
+    // flow field: following it from anywhere on the map reaches the zone target
+    const fl = await ev(() => {
+      const m = window.__oweblock.match, nav = m.nav, k = 0;
+      const flow = nav.flowFor(k, () => m.zoneGoals(k));
+      const out = { x: 0, y: 0 };
+      let ok = 0, tried = 0;
+      for (let i = 0; i < nav.walk.length && tried < 40; i += 331) {
+        if (!nav.walk[i] || flow[i] < 0) continue;
+        tried++;
+        let x = ((i % nav.w) + 0.5) * 16, y = (((i / nav.w) | 0) + 0.5) * 16;
+        for (let s = 0; s < 1500; s++) {
+          if (flow[nav.tile(x, y)] === 0) { ok++; break; }
+          if (!nav.flowDir(flow, x, y, out)) break;
+          x += out.x * 8; y += out.y * 8;
+        }
+      }
+      return { ok, tried };
+    });
+    check(fl.tried > 10 && fl.ok === fl.tried, `following the flow field reaches the goal from ${fl.ok}/${fl.tried} start points`);
+
+    // A*: a path between two far chambers exists, avoids walls, and is cached/budgeted
+    const ap = await ev(() => {
+      const m = window.__oweblock.match, nav = m.nav, ch = m.chambers;
+      let a = ch[0], b = ch[1];
+      for (const x of ch) for (const y of ch) { const d = Math.hypot(x.x - y.x, x.y - y.y); if (d > 40 && d < 70) { a = x; b = y; } }
+      nav.budget = 4;
+      const path = nav.findPath((a.x + 0.5) * 16, (a.y + 0.5) * 16, (b.x + 0.5) * 16, (b.y + 0.5) * 16);
+      let clear = !!path, px = (a.x + 0.5) * 16, py = (a.y + 0.5) * 16;
+      if (path) for (const w of path) { if (!m.map.walkClear(px, py, w.x, w.y, 3)) clear = false; px = w.x; py = w.y; }
+      nav.budget = 0;
+      const over = nav.findPath(0, 0, 10, 10);
+      return { ok: !!path, clear, len: path ? path.length : 0, overBudget: over === undefined };
+    });
+    check(ap.ok && ap.clear && ap.overBudget, `A* finds a wall-free path (${ap.len} waypoints) and refuses when the frame budget is spent`);
+    check(errors.length === 0, 'AI runs with no console errors ' + errors.join(' | '));
+    await ctx.close();
+  }
+
+  // 2e. skill tiers differ: dodging a projectile (low 5% / med 35% / high 75% by design)
+  {
+    const { page, ctx, errors } = await open('?debug=1&sim=1&manual=1&seed=21', { viewport: { width: 960, height: 540 } });
+    const res = await page.evaluate(() => {
+      const m = window.__oweblock.match;
+      const pick = (tier) => m.fighters.filter((f) => f.tier === tier && f.id !== m.player.id)[0];
+      const shooter = m.fighters.find((f) => f.id === m.player.id);
+      const out = {};
+      m.pickups.pool.clear(); m.pickups.hash.clear();
+      // a spot with 4 clear tiles of floor all round, so nothing but the dodge decides the outcome
+      let cx = 0, cy = 0;
+      search: for (let ty = 9; ty < m.map.h - 9; ty++) for (let tx = 9; tx < m.map.w - 9; tx++) {
+        let ok = true;
+        for (let dy = -4; dy <= 4 && ok; dy++) for (let dx = -4; dx <= 4; dx++) if (m.map.tile(tx + dx, ty + dy) !== 0) { ok = false; break; }
+        if (ok) { cx = (tx + 0.5) * 16; cy = (ty + 0.5) * 16; break search; }
+      }
+      for (const f of m.fighters) { if (f !== shooter) f.dead = f.dead || true; }
+      m.hash.clear();
+      for (const tier of ['low', 'med', 'high']) {
+        const f = m.fighters.find((q) => q.tier === tier && q !== shooter);
+        f.dead = false; f.hp = f.maxHp = 1e4; let hits = 0, N = 60;
+        f.controller.roamMove = () => ({ x: 0, y: 0 }); // stand still unless dodging
+        for (let n = 0; n < N; n++) {
+          f.teleport(cx, cy); f.hp = 1e4; f.dashCd = 0; f.st.stun = 0; f.invuln = 0; f.vx = f.vy = f.kx = f.ky = 0;
+          f.controller.target = null; f.controller.dodgeT = 0; f.controller.lastThreatId = ''; f.controller.t = 0;
+          const ang = (n % 8) * 0.7;
+          shooter.teleport(cx + Math.cos(ang) * 55, cy + Math.sin(ang) * 55); shooter.dead = false; shooter.intent.use = false;
+          m.hash.clear(); m.hash.insert(f);
+          m.projectiles.fly({ x: cx + Math.cos(ang) * 52, y: cy + Math.sin(ang) * 52, angle: ang + Math.PI, speed: 230, range: 300, damage: 10, owner: shooter, r: 2, kind: 'arrow' });
+          for (let s = 0; s < 36; s++) { f.controller.update(f, 1 / 60); f.update(1 / 60, m.map, m); m.hash.clear(); m.hash.insert(f); m.projectiles.update(1 / 60); }
+          if (f.hp < 1e4) hits++;
+          m.projectiles.pool.clear(); m.projectiles.orbits = 0;
+        }
+        out[tier] = hits / N; f.dead = true;
+      }
+      void pick;
+      return out;
+    });
+    check(res.high < res.low - 0.15 && res.high <= res.med + 0.05, `dodging improves with tier: hit rate low ${res.low.toFixed(2)}, med ${res.med.toFixed(2)}, high ${res.high.toFixed(2)}`);
+    check(errors.length === 0, 'tier test has no console errors ' + errors.join(' | '));
+    await ctx.close();
+  }
+
   // 2c. stress: ~300 projectiles and ~1000 particles in view must stay inside the frame budget
   {
     const { page, ctx, errors } = await open('?debug=1&seed=7&dummies=40', { viewport: { width: 960, height: 540 } });
@@ -333,6 +457,23 @@ try {
     await ctx.close();
   }
 
+  // 2f. real-time perf with 40 AI fighting
+  {
+    const { page, ctx, errors } = await open('?debug=1&seed=3', { viewport: { width: 960, height: 540 } });
+    await page.evaluate(() => {
+      const m = window.__oweblock.match;
+      let best = null, bn = -1;
+      for (const c of m.chambers) { let n = 0; for (const f of m.fighters) if (Math.hypot(f.x - c.x * 16, f.y - c.y * 16) < 200) n++; if (n > bn) { bn = n; best = c; } }
+      m.player.maxHp = m.player.hp = 1e5; m.player.teleport((best.x + 0.5) * 16, (best.y + 0.5) * 16);
+    });
+    await page.waitForTimeout(10000);
+    const st = await page.evaluate(() => ({ perf: window.__oweblock.perf(), alive: window.__oweblock.match.fighters.filter((f) => !f.dead).length }));
+    await page.screenshot({ path: join(outDir, '06-ai-match.png') });
+    check(st.perf.avg < 8, `real-time match with ${st.alive} fighters: ${st.perf.avg.toFixed(2)} ms avg, p99 ${st.perf.p99.toFixed(2)} ms`);
+    check(errors.length === 0, 'real-time AI match has no console errors ' + errors.join(' | '));
+    await ctx.close();
+  }
+
   // 3. placeholders stay playable
   {
     const { page, ctx, errors } = await open('?debug=1&seed=7&dummies=6&placeholders=1');
@@ -350,7 +491,7 @@ try {
   }
 } finally {
   await browser.close();
-  server.kill();
+  site.stop();
 }
 
 console.log(failures.length ? `\n${failures.length} check(s) failed` : '\nall checks passed');

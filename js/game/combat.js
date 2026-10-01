@@ -26,6 +26,8 @@ export function damage(match, t, amount, o = {}) {
   t.hurtShownAt = performance.now() / 1000;
   t.lastAttacker = src;
   t.lastItem = o.itemId || null;
+  t.lastKind = o.kind || null;
+  if (src && src !== t && (o.kind === 'melee' || o.kind === 'projectile' || o.kind === 'counter')) match.noteFight(t.x, t.y);
   if (src && src !== t) src.damageDealt += amount;
   t.damageTaken += amount;
 
@@ -77,6 +79,7 @@ export function kill(match, v, killer, itemId) {
   v.killedBy = killer || null;
   v.killedByItem = itemId || null;
   v.surviveTime = match.time;
+  v.deathKind = v.lastKind;
   v.busy = null;
   const k = killer && killer !== v ? killer : null;
   if (k) k.kills++;

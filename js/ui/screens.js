@@ -59,7 +59,7 @@ export function drawDeath(ctx, match) {
     'LEVEL ' + p.level + '   TIME ' + fmtTime(p.surviveTime),
   ];
   const k = p.killedBy;
-  lines.push(k ? 'KILLED BY ' + k.name + (p.killedByItem ? ' (' + itemName(p.killedByItem) + ')' : '') : 'KILLED BY THE CAVE');
+  lines.push(k ? 'KILLED BY ' + k.name + (p.killedByItem ? ' (' + itemName(p.killedByItem) + ')' : '') : p.deathKind === 'zone' ? "SWEPT BY GOBBLER'S POLICE" : p.deathKind === 'fall' ? 'FELL INTO THE VOID' : 'KILLED BY THE CAVE');
   lines.forEach((l, i) => drawText(ctx, l, cx, 104 + i * 14, { align: 'center' }));
   drawText(ctx, 'R: TRY AGAIN', cx, 200, { align: 'center', color: '#ffd860' });
 }

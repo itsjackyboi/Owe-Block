@@ -21,6 +21,13 @@ async function boot() {
       // grant the player enough XP for one level-up (opens the picker on the next step)
       levelUp: () => grantXp(game.match, game.match.player, xpNeeded(game.match.player.level) - game.match.player.xp),
       killAllAI: () => { for (const f of game.match.fighters) if (!f.isPlayer && !f.dead) kill(game.match, f, game.match.player, null); },
+      // step the match without rendering (test runner and sim): seconds of game time, returns the result once there is one
+      fastForward: (seconds) => {
+        const m = game.match, n = Math.round(seconds * 60);
+        for (let i = 0; i < n && !m.result; i++) m.update(1 / 60);
+        return m.result;
+      },
+      get result() { return game.match && game.match.result; },
       // apply melee damage from one fighter to another through the normal combat path (tests)
       damageFrom: (src, dst, n) => damage(game.match, dst, n, { source: src, kind: 'melee', kb: 0 }),
       // screen position (window px) of a world point, for scripted aiming in tests

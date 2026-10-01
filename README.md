@@ -2,7 +2,7 @@
 
 A fast, 8-bit, top-down arena battle royale set in Owe Block (Pintland Isles). You against 40 AI fighters, last one standing wins, matches run 6 to 8 minutes. Static site: `index.html` plus plain ES modules, Canvas 2D, WebAudio chiptune, `localStorage` saves. No build step, no dependencies.
 
-> Status: **Stage 2 (player combat)**. You fight idle test dummies (`?dummies=N`) on a Mines map: held-item model, four starter weapons, XP caps and the level-up picker. AI fighters, the police sweep, the other maps, named fighters and the win/save/audio layer arrive in Stages 3 to 6.
+> Status: **Stage 3 (AI + police sweep)**. 40 AI fighters in three skill tiers fight you on a Mines map while Gobbler's police sweep closes in. Four starter weapons for now. The other maps, the full item roster, named fighters and the win/save/audio layer arrive in Stages 4 to 6.
 
 ## Run it
 
@@ -27,7 +27,9 @@ then open <http://localhost:8080/>. On GitHub Pages it works from the repo subpa
 | `?placeholders=1` | flat-colour art everywhere (game stays fully playable) |
 | `?debug=1` | start a match, show the F3 overlay, expose `window.__oweblock` |
 | `?dummies=N` | N idle test fighters next to the player; they carry items and XP and drop them when killed (test aid until the AI arrives) |
-| `?sim=1&speed=10` | Stage 3: AI plays a fast match and writes `__oweblock.result` |
+| `?ai=N` | number of AI fighters (default 40; `?dummies=N` alone means 0 AI) |
+| `?sim=1&speed=10` | a high-tier bot replaces the player; the match runs at `speed`x and writes `__oweblock.result` when one fighter is left |
+| `?manual=1` | do not start the render loop; the test runner steps the match with `__oweblock.fastForward(seconds)` |
 
 ## Publish with GitHub Pages
 
@@ -71,10 +73,25 @@ To (re)map a sheet: serve the repo and open `tools/atlas.html?sheet=dungeon|town
 
 Fighters are paper-dolls (body, legs, torso, hair, hat) composited once per look into cached 16x16 canvases. There are no animation frames in the packs, so movement is procedural (bob, lean, flip toward aim, squash on hit).
 
+## AI
+
+`js/ai/ai.js` (AIController) produces the same intents as the player. Skill is entirely data: `js/data/tiers.js` (low 15 / medium 15 / high 10 fighters per match, from `TIER_MIX` in `config.js`).
+
+- **Thinking** is staggered: each AI decides every 0.1 to 0.3 s depending on tier, offset by its id. Between decisions it only steers.
+- **States** (utility scores with hysteresis): LOOT, ENGAGE (with KITE and strafe by tier), RETREAT, ZONE, THIRD_PARTY (walks toward recent fights), ROAM. Aggression is the chance to pick a fight with someone it notices; being attacked always starts one.
+- **Navigation** (`js/ai/nav.js`): shared BFS flow fields toward the next safe-zone rectangle (cached per target), budgeted grid A* (4 requests per frame, paths cached 1 s) when the straight line is blocked, then whisker wall avoidance, separation and fire avoidance.
+- **Items** are used from each item's `ai` hints (`idealRange`, `minRange`, `aim`: direct/lead/lob, `useWhen`, `specialWhen`). Level-ups use the same offer generator as the player's picker, with a tier policy.
+- **Danger:** incoming projectiles are predicted; the tier's dodge chance decides whether to strafe or dash.
+
+## The police sweep
+
+`js/game/zone.js`: a rectangle closes in from the map edges toward a seeded final point. Defaults (scaled per mode with `zone.scale` in `modes.js`; Mines uses 1.4): 1:00 safe, shrinks to 70/45/25/10% of the map taking 40/40/35/30 s with 50/40/30/25 s pauses, then a 45 s collapse. Damage outside is 2/4/7/11/16 per second by phase plus 1 per second of continuous exposure. Each shrink brings a light loot respawn inside the safe area. Hatched darkness and a marching police line mark the edge; the HUD shows the timer and a 64x64 minimap with the current and next zone.
+
 ## Checks
 
 ```
-node tools/smoke.mjs      # starts a server under /Owe-Block/, loads the game, fails on console errors, takes screenshots, checks movement/dash/pits/perf
+node tools/smoke.mjs                  # server under /Owe-Block/, console errors, screenshots, movement, combat, items, AI, zone, nav, determinism, perf
+node tools/sim.mjs --seeds 10 --frames  # 10 headless 41-fighter matches: length, population per minute, winners by tier, frame times
 npx eslint js tools
 ```
 

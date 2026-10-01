@@ -77,6 +77,25 @@ export class GameMap {
     return { x: lx, y: ly };
   }
 
+  // Solid for walking purposes: walls, cover and pits (AI never steps into a pit on purpose).
+  isBlockedPx(x, y) {
+    const t = this.tileAtPx(x, y);
+    return t === T.WALL || t === T.COVER || t === T.PIT;
+  }
+
+  // True if a body of radius r can walk the straight line without touching a blocked tile.
+  walkClear(x0, y0, x1, y1, r = 4) {
+    const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy);
+    if (d < 1) return true;
+    const nx = -dy / d * r, ny = dx / d * r;
+    const n = Math.ceil(d / 4);
+    for (let i = 1; i <= n; i++) {
+      const x = x0 + (dx * i) / n, y = y0 + (dy * i) / n;
+      if (this.isBlockedPx(x, y) || this.isBlockedPx(x + nx, y + ny) || this.isBlockedPx(x - nx, y - ny)) return false;
+    }
+    return true;
+  }
+
   // True if no wall tile lies on the straight line (cover does not block sight).
   clearLine(x0, y0, x1, y1) {
     const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 6));

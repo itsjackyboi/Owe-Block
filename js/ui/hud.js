@@ -1,6 +1,7 @@
 import { INTERNAL_W, INTERNAL_H, DASH } from '../config.js';
 import { xpNeeded } from '../game/levelup.js';
 import { drawText } from './font.js';
+import { T } from '../game/map.js';
 
 // In-match HUD. Later stages add the zone timer and the minimap here.
 export function drawHud(ctx, match) {
@@ -40,6 +41,8 @@ export function drawHud(ctx, match) {
   }
 
   drawSlots(ctx, match, p, assets);
+  drawZoneHud(ctx, match, p);
+  drawMinimap(ctx, match, p);
 
   // swap / pickup prompt
   if (p.prompt && p.prompt.kind === 'item') {
@@ -101,5 +104,62 @@ function drawSlots(ctx, match, p, assets) {
       ctx.fillStyle = rdy ? '#9ad0ff' : '#34506a'; ctx.fillRect(qx + 1, qy + 6 - Math.round(5 * fr), 5, Math.max(1, Math.round(5 * fr)));
       drawText(ctx, 'Q', qx + 1, qy, { color: rdy ? '#10101c' : '#9ab0c8', shadow: false });
     }
+  }
+}
+
+const MM = 64;
+
+// Pre-render the map silhouette once (nearest-neighbour sample of the tile grid).
+export function buildMinimap(map) {
+  const c = document.createElement('canvas');
+  c.width = MM; c.height = MM;
+  const g = c.getContext('2d');
+  const img = g.createImageData(MM, MM);
+  for (let y = 0; y < MM; y++) for (let x = 0; x < MM; x++) {
+    const t = map.tiles[Math.floor((y / MM) * map.h) * map.w + Math.floor((x / MM) * map.w)];
+    const i = (y * MM + x) * 4;
+    const col = t === T.WALL ? [34, 22, 28] : t === T.PIT ? [0, 0, 0] : t === T.COVER ? [150, 100, 60] : [200, 146, 92];
+    img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+// 64x64 minimap: map silhouette, current zone (white), next zone (yellow) and the player. No enemies.
+function drawMinimap(ctx, match, p) {
+  const x = 6, y = INTERNAL_H - MM - 6, z = match.zone;
+  ctx.fillStyle = '#10101c'; ctx.fillRect(x - 1, y - 1, MM + 2, MM + 2);
+  ctx.drawImage(match.minimap, x, y);
+  const sx = MM / match.map.pxW, sy = MM / match.map.pxH;
+  // darken outside the current zone
+  const r = z.rect;
+  ctx.fillStyle = 'rgba(14,8,26,0.55)';
+  ctx.fillRect(x, y, MM, Math.max(0, r.y0 * sy));
+  ctx.fillRect(x, y + r.y1 * sy, MM, Math.max(0, MM - r.y1 * sy));
+  ctx.fillRect(x, y + r.y0 * sy, Math.max(0, r.x0 * sx), (r.y1 - r.y0) * sy);
+  ctx.fillRect(x + r.x1 * sx, y + r.y0 * sy, Math.max(0, MM - r.x1 * sx), (r.y1 - r.y0) * sy);
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
+  ctx.strokeRect(Math.round(x + r.x0 * sx) + 0.5, Math.round(y + r.y0 * sy) + 0.5, Math.max(1, Math.round((r.x1 - r.x0) * sx)), Math.max(1, Math.round((r.y1 - r.y0) * sy)));
+  if (!z.done) {
+    const t = z.target;
+    ctx.strokeStyle = '#ffd860';
+    ctx.strokeRect(Math.round(x + t.x0 * sx) + 0.5, Math.round(y + t.y0 * sy) + 0.5, Math.max(1, Math.round((t.x1 - t.x0) * sx)), Math.max(1, Math.round((t.y1 - t.y0) * sy)));
+  }
+  if (!p.dead && (Math.floor(match.time * 3) % 2 === 0)) {
+    ctx.fillStyle = '#10101c'; ctx.fillRect(Math.round(x + p.x * sx) - 2, Math.round(y + p.y * sy) - 2, 5, 5);
+    ctx.fillStyle = '#7ae0ff'; ctx.fillRect(Math.round(x + p.x * sx) - 1, Math.round(y + p.y * sy) - 1, 3, 3);
+  }
+}
+
+// "SWEEP IN 0:42" / "SWEEPING 0:18" at the top, and a red pulse while you stand outside the zone.
+function drawZoneHud(ctx, match, p) {
+  const z = match.zone, lab = z.label();
+  const out = !p.dead && z.dps > 0 && !z.inside(p.x, p.y);
+  drawText(ctx, lab.text, INTERNAL_W / 2, 6, { align: 'center', color: lab.closing ? '#ff8a78' : '#e8e4d8' });
+  if (out) {
+    const a = 0.25 + 0.15 * Math.sin(match.time * 8);
+    ctx.fillStyle = 'rgba(200,30,20,' + a + ')';
+    ctx.fillRect(0, 0, INTERNAL_W, 6); ctx.fillRect(0, INTERNAL_H - 6, INTERNAL_W, 6); ctx.fillRect(0, 0, 6, INTERNAL_H); ctx.fillRect(INTERNAL_W - 6, 0, 6, INTERNAL_H);
+    drawText(ctx, 'GET INSIDE THE ZONE! ' + (z.dps + p.exposure).toFixed(0) + '/S', INTERNAL_W / 2, 18, { align: 'center', color: '#ff6a5a' });
   }
 }

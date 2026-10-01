@@ -11,11 +11,18 @@ export class Particles {
     this.popups = [];
     for (let i = 0; i < 40; i++) this.popups.push({ x: 0, y: 0, t: 0, text: '', color: '#fff', on: false });
     this.popIdx = 0;
+    this.cam = null; // set by the match each frame; effects far outside the view are not created
+  }
+
+  off(x, y) {
+    const c = this.cam;
+    return c && (x < c.rx - 48 || x > c.rx + 528 || y < c.ry - 48 || y > c.ry + 318);
   }
 
   get count() { return this.pool.active.length; }
 
   spark(x, y, vx, vy, life, color, size = 1, grav = 0, drag = 0) {
+    if (this.off(x, y)) return;
     const p = this.pool.acquire();
     if (!p) return;
     p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.life = p.max = life; p.color = color; p.size = size; p.grav = grav; p.drag = drag;
@@ -57,12 +64,14 @@ export class Particles {
   }
 
   popup(x, y, text, color = '#fff') {
+    if (this.off(x, y)) return;
     const p = this.popups[this.popIdx++ % this.popups.length];
     p.x = x; p.y = y; p.t = 0.7; p.text = text; p.color = color; p.on = true;
   }
 
   // Swing trail following `owner`. dir: +1 sweeps clockwise, -1 counter-clockwise.
   slash(owner, ang, arc, reach, dur, color = '#ffffff', dir = 1) {
+    if (this.off(owner.x, owner.y)) return;
     const s = this.slashPool.acquire();
     if (!s) return;
     s.owner = owner; s.ang = ang; s.arc = arc; s.reach = reach; s.t = 0; s.dur = dur; s.color = color; s.dir = dir;
