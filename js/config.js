@@ -37,7 +37,9 @@ export const CAMERA = {
 };
 
 export const PIT = {
-  fallDamage: 20,
+  damage: 20,
+  damagePct: 0,
+  stun: 0,
   safeInterval: 0.15, // how often the last-safe tile is refreshed
 };
 

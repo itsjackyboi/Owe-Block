@@ -31,6 +31,8 @@ function register(entry) {
   if (!RARITIES.includes(entry.rarity)) return bad(entry, `rarity must be one of ${RARITIES.join('/')}`);
   if (typeof entry.effect !== 'string') return bad(entry, 'missing one-line effect text');
   if (!entry.primary && !entry.special) return bad(entry, 'needs a primary or a special');
+  if (entry.kind === 'relic' && !entry.telegraph) return bad(entry, 'relics must declare a telegraph (the readable warning the AI also sees)');
+  if (entry.kind === 'exclusive' && entry.loot) return bad(entry, 'exclusive gang weapons never drop as loot');
   if (!checkSide(entry, 'primary') || !checkSide(entry, 'special')) return;
   ITEMS[entry.id] = entry;
   if (entry.loot) LOOT_ITEMS.push(entry);

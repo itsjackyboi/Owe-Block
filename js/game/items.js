@@ -28,6 +28,7 @@ export class ItemInstance {
     this.cdMax = { primary: 1, special: 1 };  // for HUD sweeps
     this.state = {};                          // per-item scratch space for actions (combo counter, boomerang out ...)
     this.cache = { primary: null, special: null, level: 0 };
+    if (def.charges) { this.state.charges = def.charges.max; this.state.rech = 0; } // e.g. the tonic: 2 charges that refill over time
   }
 
   setLevel(l) {
@@ -54,5 +55,10 @@ export class ItemInstance {
   tick(dt) {
     if (this.cd.primary > 0) this.cd.primary -= dt;
     if (this.cd.special > 0) this.cd.special -= dt;
+    const ch = this.def.charges;
+    if (ch && this.state.charges < ch.max) {
+      this.state.rech += dt;
+      if (this.state.rech >= ch.recharge) { this.state.rech = 0; this.state.charges++; }
+    }
   }
 }

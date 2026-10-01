@@ -2,6 +2,7 @@ import { RNG } from '../core/rng.js';
 import { clamp } from '../core/math.js';
 import { TIERS } from '../data/tiers.js';
 import { ITEMS } from '../data/registry.js';
+import { ACTIONS } from '../game/actions.js';
 
 // AIController: produces exactly the intents the player produces (move, aim, use, special, dash, swap, pickup).
 // Perception -> utility-scored state -> steering. Skill comes entirely from the tier table in js/data/tiers.js.
@@ -35,6 +36,7 @@ export class AIController {
     this.swapT = 0; this.wantPickup = false;
     this.charging = false;
     this.stuckT = 0; this.lastX = 0; this.lastY = 0; this.jiggle = 0; this.jiggleDir = 1;
+    this.relicRoll = 0; this.drink = false; this.lastTeleId = -1;
     this.commit = false; this.commitUntil = 0;   // aggression = chance to pick a fight with a fighter it has just noticed
   }
 
@@ -56,8 +58,10 @@ export class AIController {
     const zoneS = this.zoneScore(f);
     const hot = this.findHotspot(f);
 
-    const armed = f.item !== f.fists;
+    const kind = f.item.def.kind;
+    const armed = kind === 'weapon' || kind === 'relic' || kind === 'exclusive';
     const tg = this.target;
+    this.relicRoll = this.rng.next();
     const dist = tg ? Math.hypot(tg.x - f.x, tg.y - f.y) : 999;
 
     // a fight is on if we chose it, or if the target is hurting us
@@ -71,13 +75,18 @@ export class AIController {
     s.LOOT = loot ? loot.score : 0;
     s.ZONE = zoneS;
     s.THIRD = hot && !tg ? 0.5 * (tier.third === 'seek' ? 1 : 0.55) : 0;
+    const lure = m.areas.findDecoy(f);              // a decoy bobber draws every AI nearby, whatever its tier
+    if (lure && !(tg && this.commit)) { s.THIRD = Math.max(s.THIRD, 0.85); this.lure = lure; } else this.lure = null;
+    // low on health with a tonic in the bag: go drink it
+    if (hp < 0.5 && f.slots.some((q) => q && q.def.ai && q.def.ai.heal && q.state.charges > 0)) this.drink = true;
+    else if (hp > 0.85) this.drink = false;
     s.ROAM = 0.12;
     // hysteresis: the current state gets a bonus so decisions do not flicker
     s[this.state] = (s[this.state] || 0) * 1.25 + 0.02;
     let best = STATES.ROAM, bv = -1;
     for (const k in s) if (s[k] > bv) { bv = s[k]; best = k; }
     if (best !== this.state) { this.state = best; this.stateT = 0; this.path = null; }
-    this.hot = hot;
+    this.hot = this.lure ? { x: this.lure.x, y: this.lure.y } : hot;
 
     this.manageItems(f, dist);
     if (this.aimNoiseT <= 0) { this.aimNoise = this.rng.normal() * tier.aimErr; this.aimNoiseT = 0.35; }
@@ -131,6 +140,21 @@ export class AIController {
       this.threat = true;
       if (tt < bestT) { bestT = tt; bp = p; bd = d; }
     }
+    // telegraphed attacks (beam lines, wedges, dirge rings): step out of the danger area
+    const tele = m.telegraphs.threat(f.x, f.y, f.r, f);
+    if (tele) {
+      this.threat = true;
+      if (tele.id !== this.lastTeleId) {
+        this.lastTeleId = tele.id;
+        if (this.rng.next() < tier.dodge) {
+          let nx, ny;
+          if (tele.type === 'ring') { const d = Math.hypot(f.x - tele.x, f.y - tele.y) || 1; nx = (f.x - tele.x) / d; ny = (f.y - tele.y) / d; }
+          else { const c = Math.cos(tele.ang), s = Math.sin(tele.ang), across = -(f.x - tele.x) * s + (f.y - tele.y) * c; const sg = across >= 0 ? 1 : -1; nx = -s * sg; ny = c * sg; }
+          this.dodgeX = nx; this.dodgeY = ny; this.dodgeT = Math.max(0.6, tele.dur - tele.t);
+          if ((tier.dash === 'dodge' || tier.dash === 'full') && f.dashCd <= 0 && tele.dur - tele.t < 0.45) { this.wantDash = true; this.dashDx = nx; this.dashDy = ny; }
+        }
+      }
+    }
     if (!bp) return;
     const key = bp._pi + ':' + (bp.owner ? bp.owner.id : 0) + ':' + Math.round(bp.travelled);
     if (this.lastThreatId === bp._pi + ':' + (bp.owner ? bp.owner.id : 0)) return;
@@ -166,7 +190,7 @@ export class AIController {
     const m = this.match, tier = this.tier;
     const R = tier.perceive + 80;
     m.pickups.hash.query(f.x, f.y, R, scratchLoot);
-    const armed = f.item !== f.fists;
+    const armed = f.item.def.kind !== 'default' && f.item.def.kind !== 'everyday';
     let best = null;
     for (let i = 0; i < scratchLoot.length; i++) {
       const p = scratchLoot[i];
@@ -179,6 +203,8 @@ export class AIController {
         const take = f.canTake(p.id);
         const need = take ? (armed ? 0.9 : 1.5) : 0.25;
         score = (0.35 + 0.5 * (RARITY_VALUE[def.rarity] || 0.5)) * need * (1 - d / R);
+        if (f.prefers && f.prefers.includes(p.id)) score *= 1.7;
+        if (def.kind === 'everyday' && armed) score *= 0.7;
         if (p.delayId === f.id && m.time < p.delayUntil) score = 0;
       }
       if (!best || score > best.score) best = { x: p.x, y: p.y, score, kind: p.kind, id: p.id };
@@ -205,8 +231,14 @@ export class AIController {
   manageItems(f, dist) {
     const it = f.intent, tier = this.tier;
     const held = f.slots[f.held];
+    if (this.drink) { // go for the tonic
+      const ti = f.slots.findIndex((q) => q && q.def.ai && q.def.ai.heal && q.state.charges > 0);
+      if (ti >= 0) { if (ti !== f.held) it.swapTo = ti; return; }
+      this.drink = false;
+    }
     if (!held) { // empty hand: grab the first item we have
-      const i = f.slots.findIndex((s) => s);
+      let i = f.slots.findIndex((s) => s && s.def.kind !== 'everyday');
+      if (i < 0) i = f.slots.findIndex((s) => s);
       if (i >= 0) it.swapTo = i;
     } else if (this.swapT <= 0 && tier.id !== 'low' && this.target && f.slots.filter((s) => s).length > 1) {
       let best = f.held, bs = -1;
@@ -215,6 +247,7 @@ export class AIController {
         if (!s) continue;
         const ai = s.def.ai || { idealRange: 30 };
         let sc = 1 / (1 + Math.abs(ai.idealRange - dist) / 40);
+        if (s.def.kind === 'everyday') sc *= 0.2; // pouches, tonics and shards are for support
         if (s.cd.primary > 0.5 && s.cd.special > 0.5) sc *= 0.4; // everything on cooldown: prefer another
         if (i === f.held) sc *= 1.15;
         if (sc > bs) { bs = sc; best = i; }
@@ -281,6 +314,8 @@ export class AIController {
 
     // ---- aim and fire
     this.aimAndFire(f, tg, visible);
+    // drinking a tonic when hurt
+    if (this.drink && f.item.def.ai && f.item.def.ai.heal && f.item.state.charges > 0 && f.hp / f.maxHp < 0.85) f.intent.use = true;
   }
 
   // ---- movement behaviours
@@ -427,21 +462,48 @@ export class AIController {
     const attackRange = ai.attackRange || (ai.aim === 'direct' ? Math.max(ai.idealRange * 1.2, ai.idealRange + 8) : Math.min(p.range ? p.range * 0.85 : 999, ai.idealRange * 1.7));
     const inRange = dist <= attackRange;
 
-    // primary
-    const def = inst.def.primary;
-    if (def && inRange && this.wantUse(f, inst, tg)) {
-      if (def.action === 'chargeRelease') {
-        const want = p.minCharge + (p.maxCharge - p.minCharge) * tier.charge;
-        if (f.busy && f.busy.inst === inst) { it.use = f.busy.t < want; this.charging = it.use; }
-        else if (inst.cd.primary <= 0) it.use = true;
-      } else it.use = true;
-    } else if (f.busy && f.busy.inst === inst) it.use = false;
-
-    // special
-    if (inst.def.special && inst.cd.special <= 0 && this.wantSpecial(f, tg, dist, ai)) it.special = true;
+    // primary, then special. Channelled items (bow draw, thunderclap) are held for a tier-dependent fraction of their charge.
+    for (let k = 0; k < 2; k++) {
+      const kind = k === 0 ? 'primary' : 'special', def = inst.def[kind];
+      if (!def) continue;
+      const pk = inst.params(kind), act = ACTIONS[def.action];
+      const busy = f.busy && f.busy.inst === inst && f.busy.kind === kind;
+      const want = kind === 'primary' ? (inRange && this.wantUse(f, inst, tg, dist)) : (inst.cd.special <= 0 && this.wantSpecial(f, inst, tg, dist, ai));
+      let down = false;
+      if (act.keep) {
+        if (busy) down = f.busy.t < pk.minCharge + (pk.maxCharge - pk.minCharge) * tier.charge && (want || kind === 'primary' && inRange);
+        else down = want && inst.cd[kind] <= 0;
+        if (kind === 'primary') this.charging = down;
+      } else down = want;
+      if (kind === 'primary') it.use = down; else it.special = down;
+    }
   }
 
-  wantUse(f, inst, tg) {
+  // Relic timing by tier: random / when the target is in range and slow / predictive (nets on cornered or rooted targets,
+  // beams along lines, sermons onto fights).
+  relicOk(f, inst, tg, dist) {
+    const tier = this.tier, ai = inst.def.ai || {};
+    if (dist > (ai.idealRange || 100) * 1.8) return false;
+    switch (tier.relic) {
+      case 'random': return this.relicRoll < 0.25;
+      case 'inRange': return Math.hypot(tg.vx, tg.vy) < 40 || tg.st.slow > 0 || tg.st.root > 0 || this.relicRoll < 0.12;
+      default:
+        switch (ai.relicWhen) {
+          case 'cornered': return this.cornered(tg, f) || tg.st.root > 0 || tg.st.slow > 0;
+          case 'fight': return this.clustered(tg) >= 2 || tg.st.slow > 0 || tg.st.root > 0 || (this.commit && dist < 90);
+          default: return true; // 'line' and anything else
+        }
+    }
+  }
+
+  // Is the target pinned against a wall on the side away from us?
+  cornered(tg, f) {
+    const dx = tg.x - f.x, dy = tg.y - f.y, d = Math.hypot(dx, dy) || 1;
+    return this.match.map.isBlockedPx(tg.x + (dx / d) * 14, tg.y + (dy / d) * 14);
+  }
+
+  wantUse(f, inst, tg, dist) {
+    if (inst.def.kind === 'relic') return inst.cd.primary <= 0 && this.relicOk(f, inst, tg, dist);
     const when = (inst.def.ai && inst.def.ai.useWhen) || 'inRange';
     switch (when) {
       case 'targetRooted': return tg.st.root > 0 || tg.st.stun > 0 || this.tier.id === 'low';
@@ -457,10 +519,14 @@ export class AIController {
     return scratch.length;
   }
 
-  wantSpecial(f, tg, dist, ai) {
+  wantSpecial(f, inst, tg, dist, ai) {
+    if (inst.def.kind === 'relic') return this.relicOk(f, inst, tg, dist);
     const when = ai.specialWhen || 'inRange';
     const roll = this.rng.next();
     switch (when) {
+      case 'gapClose': return dist > 35 && dist < 100;
+      case 'surrounded': { this.match.hash.query(f.x, f.y, 44, scratch); return scratch.length >= 3; }
+      case 'retreating': return this.state === STATES.RETREAT;
       case 'underMelee': return (dist < 30 && (tg.swing.t > 0 || tg.item.cd.primary > tg.item.cdMax.primary - 0.1)) || (this.threat && roll < 0.5);
       case 'clustered': return this.clustered(tg) >= 2 && dist < 220;
       case 'targetFleeing': return Math.hypot(tg.vx, tg.vy) > 50 && dist < 150;

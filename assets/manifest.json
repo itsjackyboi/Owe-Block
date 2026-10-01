@@ -304,8 +304,8 @@
       "frame": 105
     },
     "shiv": {
-      "sheet": "dungeon",
-      "frame": 103
+      "sheet": "chars",
+      "frame": 422
     },
     "whopper": {
       "sheet": "dungeon",
@@ -318,10 +318,6 @@
     "singing_bow": {
       "sheet": "town",
       "frame": 118
-    },
-    "arbalest": {
-      "sheet": "town",
-      "frame": 119
     },
     "beast_hook": {
       "sheet": "town",
@@ -354,10 +350,6 @@
     "krags_cleaver": {
       "sheet": "dungeon",
       "frame": 107
-    },
-    "zaars_edges": {
-      "sheet": "dungeon",
-      "frame": 104
     }
   },
   "anims": {},
@@ -383,6 +375,62 @@
       "frame": -1,
       "rot": 0,
       "scale": 0.75
+    },
+    "shiv": {
+      "sheet": "chars",
+      "frame": 422,
+      "rot": 0
+    },
+    "whopper": {
+      "sheet": "chars",
+      "frame": 47,
+      "rot": 0,
+      "scale": 1.15
+    },
+    "keg_flail": {
+      "sheet": "chars",
+      "frame": 48,
+      "rot": 0,
+      "scale": 1.1
+    },
+    "beast_hook": {
+      "sheet": "chars",
+      "frame": 212,
+      "rot": 0
+    },
+    "old_staff": {
+      "sheet": "chars",
+      "frame": 150,
+      "rot": 0
+    },
+    "krags_cleaver": {
+      "sheet": "chars",
+      "frame": 428,
+      "rot": 0
+    },
+    "veilwalker_net": {
+      "sheet": "dungeon",
+      "frame": 56,
+      "rot": 0,
+      "scale": 0.7
+    },
+    "sad_sermon": {
+      "sheet": "dungeon",
+      "frame": 64,
+      "rot": 0,
+      "scale": 0.8
+    },
+    "wind_pouch": {
+      "sheet": "town",
+      "frame": 107,
+      "rot": 0,
+      "scale": 0.7
+    },
+    "clockheart_tonic": {
+      "sheet": "dungeon",
+      "frame": 116,
+      "rot": 0,
+      "scale": 0.8
     }
   }
 }

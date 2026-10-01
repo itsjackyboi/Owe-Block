@@ -1,7 +1,7 @@
 import { TILE, CHUNK_TILES } from '../config.js';
 import { INTERNAL_W, INTERNAL_H } from '../config.js';
 
-export const T = { FLOOR: 0, WALL: 1, PIT: 2, COVER: 3 };
+export const T = { FLOOR: 0, WALL: 1, PIT: 2, COVER: 3, CRYSTAL: 4 };
 const CHUNK_PX = TILE * CHUNK_TILES;
 
 // Tile grid + collision + chunk-cached rendering. Knows nothing about modes: it just draws roles from a tileset.
@@ -27,7 +27,7 @@ export class GameMap {
   }
 
   tileAtPx(x, y) { return this.tile(Math.floor(x / TILE), Math.floor(y / TILE)); }
-  isSolidTile(tx, ty) { const t = this.tile(tx, ty); return t === T.WALL || t === T.COVER; }
+  isSolidTile(tx, ty) { const t = this.tile(tx, ty); return t === T.WALL || t === T.COVER || t === T.CRYSTAL; }
   isSolidPx(x, y) { return this.isSolidTile(Math.floor(x / TILE), Math.floor(y / TILE)); }
 
   // Pushes a circle (o.x, o.y, o.r) out of solid tiles. Returns true if it moved.
@@ -80,7 +80,7 @@ export class GameMap {
   // Solid for walking purposes: walls, cover and pits (AI never steps into a pit on purpose).
   isBlockedPx(x, y) {
     const t = this.tileAtPx(x, y);
-    return t === T.WALL || t === T.COVER || t === T.PIT;
+    return t === T.WALL || t === T.COVER || t === T.PIT || t === T.CRYSTAL;
   }
 
   // True if a body of radius r can walk the straight line without touching a blocked tile.

@@ -2,7 +2,7 @@
 
 A fast, 8-bit, top-down arena battle royale set in Owe Block (Pintland Isles). You against 40 AI fighters, last one standing wins, matches run 6 to 8 minutes. Static site: `index.html` plus plain ES modules, Canvas 2D, WebAudio chiptune, `localStorage` saves. No build step, no dependencies.
 
-> Status: **Stage 3 (AI + police sweep)**. 40 AI fighters in three skill tiers fight you on a Mines map while Gobbler's police sweep closes in. Four starter weapons for now. The other maps, the full item roster, named fighters and the win/save/audio layer arrive in Stages 4 to 6.
+> Status: **Stage 4 (full roster)**. 16 items plus the two gang weapons, relic telegraphs and everyday passives, on top of the AI and the police sweep. The other maps, named fighters and the win/save/audio layer arrive in Stages 5 and 6.
 
 ## Run it
 
@@ -72,6 +72,30 @@ Any numeric param (and `cooldown`) can be a 5-length array indexed by item level
 To (re)map a sheet: serve the repo and open `tools/atlas.html?sheet=dungeon|town|factory|chars` (add `&zoom=5&c0=0&c1=9` to view a column range). It draws every frame with its index overlaid.
 
 Fighters are paper-dolls (body, legs, torso, hair, hat) composited once per look into cached 16x16 canvases. There are no animation frames in the packs, so movement is procedural (bob, lean, flip toward aim, squash on hit).
+
+## Items
+
+| Item | Kind | Left click | Q |
+|---|---|---|---|
+| Cutlass | weapon | 100 deg slash | Riposte: parry, reflect, counter + stun |
+| Shiv | weapon | quick stab, x2.5 from behind | Lunge: dash-stab, bleed, a kill resets the dash |
+| Wagwan's Whopper | weapon | heavy smash, wall slam stuns | Thunderclap: hold to charge a knockback shockwave |
+| Keg Flail | weapon | 220 deg sweep, x1.5 at the tip | Whirl: 1.5 s spin |
+| Singing Bow | weapon | hold to draw | Volley: 5 arrows |
+| Gaol Arbalest | weapon | bolt pierces everyone in line | Brace: kneel, then 3 bolts |
+| Drifter's Call | weapon | boomerang, hits both ways | Orbit blades |
+| Beast Hook | weapon | hook yanks a fighter to you | Reel yourself in (crosses gaps) |
+| Bully Hill Mantrap | weapon | place a trap (max 3) | Toss one |
+| Ancient Pot | weapon | lob a fire pool | Oil slick (fire ignites it) |
+| Old Staff | relic | channelled beam through walls | Sweep a 60 deg wedge |
+| Veilwalker Net | relic | thrown net roots everyone it bursts on | Lure: decoy, then a net |
+| Sad Sermon | relic | ring telegraph, then a silencing dirge | Last Rites: the dirge follows you |
+| Wolendi Wind Pouch | everyday | Gust (cone shove, deflects projectiles); passive from any slot: dash +35% distance, -20% cooldown | Tailwind: +50% move speed |
+| ClockHeart Tonic | everyday | drink: heal, then slowed (2 charges) | Splash: slow enemies |
+| Amethyst Shard | everyday | grow crystal cover; passive: every 8 s the next hit is -60% | Shatter into slivers |
+| Krag's Cleaver / Zaar's Edges | gang exclusive | 3-hit combo / 3 ricochet knives | Cutter's Charge / Ring of Fire |
+
+Relics are about 6% of loot (more at vaults). Every relic declares a `telegraph` in its entry (beam line, wedge, ring) that both the player and the AI can see. Exclusives are never loot.
 
 ## AI
 

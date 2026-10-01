@@ -80,9 +80,9 @@ export function kill(match, v, killer, itemId) {
   v.killedByItem = itemId || null;
   v.surviveTime = match.time;
   v.deathKind = v.lastKind;
-  v.busy = null;
+  v.cancelBusy();
   const k = killer && killer !== v ? killer : null;
-  if (k) k.kills++;
+  if (k) { k.kills++; if (k.lungeT > 0) { k.dashCd = 0; k.lungeT = 0; k.hitFlash = 0; match.fx.popup(k.x, k.y - 14, 'DASH READY', '#9ad0ff'); } }
   match.onKill(v, k, itemId);
 
   const px = v.x, py = v.y;

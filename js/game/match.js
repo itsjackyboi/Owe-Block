@@ -14,6 +14,8 @@ import { Projectiles } from './projectiles.js';
 import { Areas } from './areas.js';
 import { Particles } from './particles.js';
 import { Pickups } from './pickups.js';
+import { Telegraphs } from './telegraphs.js';
+import { Crystals } from './crystals.js';
 import { Zone, drawZone } from './zone.js';
 import { Nav } from '../ai/nav.js';
 import { AIController } from '../ai/ai.js';
@@ -52,6 +54,10 @@ export class Match {
     this.projectiles = new Projectiles(this);
     this.areas = new Areas(this);
     this.pickups = new Pickups(this);
+    this.telegraphs = new Telegraphs(this);
+    this.crystals = new Crystals(this);
+    this.timers = [];   // delayed effects: { t, fn }
+    this.over = false;
     this.nav = new Nav(this.map);
     this.hotspots = [];
     for (let i = 0; i < 24; i++) this.hotspots.push({ x: 0, y: 0, t: -99 });
@@ -73,6 +79,12 @@ export class Match {
   }
 
   itemDef(id) { return ITEMS[id]; }
+
+  // Run fn after `seconds` of match time (paused while the level-up picker is open).
+  later(seconds, fn) { this.timers.push({ t: seconds, fn }); }
+
+  // Sound effect at a world position (distance-attenuated and culled by the audio module).
+  sfx(name, x, y) { const a = this.game.audio; if (a) a.sfx(name, x, y, this.camera); }
 
   spawnFighters(opts) {
     const dummies = opts.dummies | 0;
@@ -257,6 +269,9 @@ export class Match {
 
     for (let i = 0; i < fs.length; i++) updateItemUse(fs[i], this, dt);
     this.zone.update(dt);
+    for (let i = this.timers.length - 1; i >= 0; i--) { const tm = this.timers[i]; tm.t -= dt; if (tm.t <= 0) { this.timers.splice(i, 1); tm.fn(); } }
+    this.telegraphs.update(dt);
+    this.crystals.update(dt);
     this.projectiles.update(dt);
     this.areas.update(dt);
     this.pickups.update(dt);
@@ -334,8 +349,9 @@ export class Match {
 
     r.clear();
     this.map.draw(ctx, cam);
-    this.areas.draw(ctx, cam);
+    this.areas.draw(ctx, cam, this.player);
     this.pickups.draw(ctx, cam, g.assets);
+    this.crystals.draw(ctx, cam);
 
     const list = this.drawList;
     list.length = 0;
@@ -349,6 +365,7 @@ export class Match {
     for (let i = 0; i < list.length; i++) list[i].draw(ctx, cam, alpha, g.sprites);
 
     this.projectiles.draw(ctx, cam, g.assets);
+    this.telegraphs.draw(ctx, cam);
     this.fx.draw(ctx, cam);
     drawZone(ctx, cam, this.zone, g.sprites, this.time);
 

@@ -8,6 +8,10 @@ export class Particles {
   constructor() {
     this.pool = new Pool(() => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1, color: '#fff', size: 1, grav: 0, drag: 0 }), 2048);
     this.slashPool = new Pool(() => ({ owner: null, ang: 0, arc: 1, reach: 20, t: 0, dur: 0.12, color: '#fff', dir: 1 }), 64);
+    this.beams = [];
+    for (let i = 0; i < 16; i++) this.beams.push({ x0: 0, y0: 0, x1: 0, y1: 0, t: 0, dur: 1, on: false });
+    this.rings = [];
+    for (let i = 0; i < 16; i++) this.rings.push({ x: 0, y: 0, r: 0, t: 0, dur: 0.3, color: '#fff', on: false });
     this.popups = [];
     for (let i = 0; i < 40; i++) this.popups.push({ x: 0, y: 0, t: 0, text: '', color: '#fff', on: false });
     this.popIdx = 0;
@@ -63,6 +67,26 @@ export class Particles {
     }
   }
 
+  beam(x0, y0, x1, y1, dur) {
+    if (this.off(x0, y0) && this.off(x1, y1)) return;
+    const b = this.beams.find((q) => !q.on) || this.beams[0];
+    b.x0 = x0; b.y0 = y0; b.x1 = x1; b.y1 = y1; b.t = 0; b.dur = dur; b.on = true;
+  }
+
+  ring(x, y, r, color = '#fff') {
+    if (this.off(x, y)) return;
+    const q = this.rings.find((w) => !w.on) || this.rings[0];
+    q.x = x; q.y = y; q.r = r; q.t = 0; q.dur = 0.3; q.color = color; q.on = true;
+  }
+
+  // wind lines streaming through a cone
+  gust(x, y, ang, reach, half) {
+    for (let i = 0; i < 14; i++) {
+      const a = ang + (Math.random() - 0.5) * half * 2, s = 140 + Math.random() * 120;
+      this.spark(x + Math.cos(a) * 8, y + Math.sin(a) * 8, Math.cos(a) * s, Math.sin(a) * s, reach / s, i % 2 ? '#ffffff' : '#c8e8ff', 1, 0, 1.5);
+    }
+  }
+
   popup(x, y, text, color = '#fff') {
     if (this.off(x, y)) return;
     const p = this.popups[this.popIdx++ % this.popups.length];
@@ -92,6 +116,8 @@ export class Particles {
       s[i].t += dt;
       if (s[i].t >= s[i].dur) this.slashPool.release(s[i]);
     }
+    for (const b of this.beams) if (b.on) { b.t += dt; if (b.t >= b.dur) b.on = false; }
+    for (const q of this.rings) if (q.on) { q.t += dt; if (q.t >= q.dur) q.on = false; }
     for (let i = 0; i < this.popups.length; i++) {
       const p = this.popups[i];
       if (p.on) { p.t -= dt; p.y -= 22 * dt; if (p.t <= 0) p.on = false; }
@@ -122,6 +148,22 @@ export class Particles {
           ctx.fillRect(Math.round(ox + Math.cos(ang) * rr), Math.round(oy + Math.sin(ang) * rr), 2, 2);
         }
       }
+    }
+    for (const b of this.beams) {
+      if (!b.on) continue;
+      const u = b.t / b.dur, dx = b.x1 - b.x0, dy = b.y1 - b.y0, n = Math.ceil(Math.hypot(dx, dy) / 2);
+      for (let i = 0; i < n; i++) {
+        const f = i / n, x = Math.round(b.x0 + dx * f - cam.rx), y = Math.round(b.y0 + dy * f - cam.ry);
+        ctx.fillStyle = '#7a3ab8'; ctx.fillRect(x - 2, y - 2, 5, 5);
+        ctx.fillStyle = u < 0.6 ? '#c88aff' : '#9a5ad8'; ctx.fillRect(x - 1, y - 1, 3, 3);
+        if (u < 0.5) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 1, 1); }
+      }
+    }
+    for (const q of this.rings) {
+      if (!q.on) continue;
+      const r = q.r * (0.5 + 0.5 * (q.t / q.dur)), n = Math.max(16, (r * 2) | 0);
+      ctx.fillStyle = q.color;
+      for (let i = 0; i < n; i++) { const a = (i / n) * 6.283; ctx.fillRect(Math.round(q.x - cam.rx + Math.cos(a) * r), Math.round(q.y - cam.ry + Math.sin(a) * r * 0.8), 2, 2); }
     }
     for (let i = 0; i < this.popups.length; i++) {
       const p = this.popups[i];

@@ -58,7 +58,11 @@ export class Fighter {
     this.parryT = 0; this.parryArc = 0; this.parryCounter = 0; this.parryStun = 0; this.parryItem = null;
     this.shieldReady = false;
 
-    this.dashT = 0; this.dashCd = 0; this.invuln = 0;
+    this.dashT = 0; this.dashCd = 0; this.dashCdMax = DASH.cooldown; this.invuln = 0;
+    this.pDash = 1; this.pDashCd = 1; this.shieldT = 0; // passives from any slot
+    this.strike = null; this.lungeT = 0;               // dash-strike in progress / recent lunge (kill resets the dash)
+    this.cvx = 0; this.cvy = 0;                        // conveyor push, set by hazards each step
+    this.named = !!opts.named; this.prefers = opts.prefers || null; this.speedBonus = opts.speedBonus || 0;
     this.dashDx = 1; this.dashDy = 0;
 
     this.st = newStatusBag();
@@ -77,6 +81,12 @@ export class Fighter {
   get item() {
     if (this.st.silence > 0) return this.fists;
     return this.slots[this.held] || this.fists;
+  }
+
+  // Ends a channelled action (and lets it clean up, e.g. remove its telegraph).
+  cancelBusy() {
+    if (this.busy && this.busy.onCancel) this.busy.onCancel();
+    this.busy = null;
   }
 
   hasItem(id) { return this.slots.some((s) => s && s.id === id); }
@@ -131,6 +141,18 @@ export class Fighter {
     for (let i = 0; i < this.slots.length; i++) if (this.slots[i]) this.slots[i].tick(dt);
     this.fists.tick(dt);
 
+    // passives work from any slot
+    let pd = 1, pc = 1, sh = 0;
+    for (let i = 0; i < this.slots.length; i++) {
+      const ps = this.slots[i] && this.slots[i].def.passive;
+      if (ps) { if (ps.dashDist) pd *= ps.dashDist; if (ps.dashCd) pc *= ps.dashCd; if (ps.shield) sh = ps.shield; }
+    }
+    this.pDash = pd; this.pDashCd = pc;
+    if (sh) {
+      if (!this.shieldReady) { this.shieldT += dt; if (this.shieldT >= sh) { this.shieldReady = true; this.shieldT = 0; } }
+    } else { this.shieldReady = false; this.shieldT = 0; }
+    if (this.lungeT > 0) this.lungeT -= dt;
+
     const stunned = this.st.stun > 0, rooted = stunned || this.st.root > 0;
 
     this.aim = it.aim; this.tx = it.tx; this.ty = it.ty;
@@ -142,7 +164,7 @@ export class Fighter {
       let to = -1;
       if (it.swapTo >= 0 && it.swapTo < this.slots.length && it.swapTo !== this.held) to = it.swapTo;
       else if (it.swapDir) to = (this.held + it.swapDir + this.slots.length) % this.slots.length;
-      if (to >= 0) { this.held = to; this.swapT = 0.15; this.busy = null; }
+      if (to >= 0) { this.held = to; this.swapT = 0.15; this.cancelBusy(); }
     }
 
     // dash: starts toward movement input, or toward the aim when standing still
@@ -151,8 +173,8 @@ export class Fighter {
       if (dx === 0 && dy === 0) { dx = Math.cos(it.aim); dy = Math.sin(it.aim); }
       const l = Math.hypot(dx, dy) || 1;
       this.dashDx = dx / l; this.dashDy = dy / l;
-      this.dashT = DASH.time; this.dashCd = DASH.cooldown * this.dashCdMul; this.invuln = DASH.invuln;
-      this.busy = null;
+      this.dashT = DASH.time * this.pDash; this.dashCdMax = DASH.cooldown * this.dashCdMul * this.pDashCd; this.dashCd = this.dashCdMax; this.invuln = DASH.invuln;
+      this.cancelBusy();
       match.fx.dust(this.x, this.y + 4, 4);
     }
 
@@ -161,7 +183,8 @@ export class Fighter {
       this.dashT -= dt;
       if (this.dashT <= 0) { this.dashT = 0; this.vx *= 0.3; this.vy *= 0.3; }
     } else {
-      let sp = this.speed * (1 + this.moveBonus);
+      let sp = this.speed * (1 + this.moveBonus + this.speedBonus);
+      if (this.st.haste > 0) sp *= 1.5;
       if (this.stance) sp *= 0.65;
       if (this.busy) sp *= this.busy.slow;
       if (this.st.slow > 0) sp *= 1 - this.st.slowPow;
@@ -177,8 +200,8 @@ export class Fighter {
     if (Math.abs(this.kx) + Math.abs(this.ky) < 3) this.kx = this.ky = 0;
 
     const ox = this.x, oy = this.y;
-    this.x += (this.vx + this.kx) * dt;
-    this.y += (this.vy + this.ky) * dt;
+    this.x += (this.vx + this.kx + this.cvx) * dt;
+    this.y += (this.vy + this.ky + this.cvy) * dt;
     map.hitWall = false;
     map.resolveCircle(this);
     if (map.hitWall && this.slamStun > 0 && Math.hypot(this.kx, this.ky) > 70) {
@@ -211,9 +234,11 @@ export class Fighter {
   fall(match) {
     this.falls++;
     const x = this.lastSafeX, y = this.lastSafeY;
+    const rule = match.mode.pit || PIT;
     this.hitFlash = 0.08; this.squash = 1;
-    damage(match, this, PIT.fallDamage, { kind: 'fall', quiet: true });
-    if (!this.dead) this.teleport(x, y);
+    damage(match, this, (rule.damage || 0) + (rule.damagePct || 0) * this.maxHp, { kind: 'fall', quiet: true });
+    if (!this.dead) { this.teleport(x, y); if (rule.stun) this.st.stun = Math.max(this.st.stun, rule.stun); }
+    match.sfx('fall', this.x, this.y);
   }
 
   // ---- drawing ----
@@ -261,6 +286,12 @@ export class Fighter {
       ctx.fillStyle = '#10101c'; ctx.fillRect(sx - 8, sy + 9, w + 2, 4);
       ctx.fillStyle = b.full ? '#ffffff' : (b.ready ? '#ffd860' : '#6a6a80'); ctx.fillRect(sx - 7, sy + 10, Math.round(w * (b.ready ? b.frac : 0.08)), 2);
     }
+    if (this.shieldReady) { // amethyst shimmer: the next hit is cut by 60%
+      const t = performance.now() / 160;
+      for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#c8a0ff' : '#ffffff'; ctx.fillRect(Math.round(sx + Math.cos(t + i * 1.57) * 8), Math.round(sy - 5 + Math.sin(t + i * 1.57) * 7), 1, 1); }
+    }
+    if (this.st.root > 0 && !stunned) { ctx.fillStyle = '#c8e8ff'; for (let i = -6; i <= 6; i += 3) ctx.fillRect(sx + i, sy + 6, 2, 1); }
+    if (this.st.silence > 0) { ctx.fillStyle = '#8aa0c8'; ctx.fillRect(sx - 2, sy - 19, 5, 1); ctx.fillRect(sx - 2, sy - 17, 5, 1); }
     if (stunned) {
       const t = performance.now() / 120;
       ctx.fillStyle = '#ffe060';

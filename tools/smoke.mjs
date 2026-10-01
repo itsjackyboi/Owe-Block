@@ -437,6 +437,182 @@ try {
     await ctx.close();
   }
 
+  // 2g. Stage 4: the full roster, one scenario per item
+  {
+    const { page, ctx, errors } = await open('?debug=1&manual=1&seed=7&dummies=4', { viewport: { width: 960, height: 540 } });
+    await page.evaluate(() => {
+      const m = window.__oweblock.match, P = m.player, D = m.fighters.slice(1, 5);
+      let ox = 0, oy = 0;
+      search: for (let ty = 6; ty < m.map.h - 6; ty++) for (let tx = 6; tx < m.map.w - 18; tx++) {
+        let ok = true;
+        for (let dy = -2; dy <= 2 && ok; dy++) for (let dx = 0; dx <= 17; dx++) if (m.map.tile(tx + dx, ty + dy) !== 0) { ok = false; break; }
+        if (ok) { ox = (tx + 2.5) * 16; oy = (ty + 0.5) * 16; break search; }
+      }
+      const H = window.H = { m, P, D, ox, oy };
+      H.step = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) m.update(1 / 60); };
+      H.reset = () => {
+        m.levelUp = null; P.pendingLevels = 0; P.xp = 0; P.xpTotal = 0; P.strike = null; P.dashT = 0; P.lungeT = 0;
+        P.controller = null; P.dead = false; P.hp = P.maxHp = 300; P.slots.fill(null); P.held = 0; P.swapT = 0; P.cdMul = 1; P.dmgMul = 1; P.armor = 0; P.dashCd = 0; P.level = 1;
+        P.st.stun = P.st.root = P.st.slow = P.st.silence = P.st.haste = P.st.heal = 0; P.cancelBusy(); P.kx = P.ky = 0; P.shieldT = 0; P.shieldReady = false; P.lastHurtT = 1e9; // no idle regen muddying the numbers
+        P.fists.cd.primary = P.fists.cd.special = 0;
+        P.intent.use = P.intent.special = P.intent.dash = false; P.intent.mx = P.intent.my = 0; P.intent.stance = false; P.intent.swapTo = -1;
+        m.pickups.pool.clear(); m.pickups.hash.clear(); m.projectiles.pool.clear(); m.projectiles.orbits = 0; m.areas.pool.clear(); m.telegraphs.pool.clear(); m.timers.length = 0;
+        for (const c of m.crystals.list.slice()) m.crystals.remove(c);
+        for (const f of m.fighters) if (f !== P && !D.includes(f)) f.dead = true;
+        D.forEach((d, i) => { d.dead = false; d.hp = d.maxHp = 500; d.slots.fill(null); d.st.stun = d.st.root = d.st.slow = d.st.silence = d.st.bleed = d.st.burn = 0; d.kx = d.ky = 0; d.slamStun = 0; d.teleport(ox + 400, oy + 400 + i * 30); d.intent.aim = Math.PI; d.aim = Math.PI; });
+        P.teleport(ox, oy); P.intent.aim = 0; P.aim = 0; P.fists.state = {};
+        m.camera.snapTo(P.x, P.y, m.map.pxW, m.map.pxH);
+      };
+      H.at = (i, dx, dy, aim) => { D[i].teleport(ox + dx, oy + dy); if (aim !== undefined) { D[i].intent.aim = aim; D[i].aim = aim; } };
+      H.aim = (dx, dy) => { P.intent.aim = Math.atan2(dy, dx); P.intent.tx = P.x + dx; P.intent.ty = P.y + dy; P.aim = P.intent.aim; P.tx = P.intent.tx; P.ty = P.intent.ty; };
+      H.give = (id, lv = 1) => { H.P.slots.fill(null); H.P.held = 0; const r = P.addItem(id, lv); P.held = 0; return r; };
+      H.press = (kind, sec = 0.05) => { const k = kind === 'q' ? 'special' : 'use'; P.intent[k] = true; H.step(sec); P.intent[k] = false; H.step(0.02); };
+      H.hold = (kind, sec) => { const k = kind === 'q' ? 'special' : 'use'; P.intent[k] = true; H.step(sec); P.intent[k] = false; H.step(0.05); };
+      H.loss = (i) => D[i].maxHp - D[i].hp;
+    });
+    const R = (fn, arg) => page.evaluate(fn, arg);
+
+    // item roster sanity
+    const roster = await R(() => import(new URL('js/data/registry.js', location.href).href).then((r) => ({
+      ids: Object.keys(r.ITEMS), loot: r.LOOT_ITEMS.map((i) => i.id),
+      relicsOk: Object.values(r.ITEMS).filter((i) => i.kind === 'relic').every((i) => i.telegraph),
+      aiOk: Object.values(r.ITEMS).every((i) => i.ai && i.ai.idealRange != null),
+    })));
+    const want = ['cutlass', 'shiv', 'whopper', 'keg_flail', 'singing_bow', 'arbalest', 'drifters_call', 'beast_hook', 'mantrap', 'ancient_pot', 'old_staff', 'veilwalker_net', 'sad_sermon', 'wind_pouch', 'clockheart_tonic', 'amethyst_shard', 'krags_cleaver', 'zaars_edges', 'bare_knuckles'];
+    check(want.every((w) => roster.ids.includes(w)) && roster.ids.length === 19, `all 16 items + 2 exclusives + fists are registered (${roster.ids.length})`);
+    check(!roster.loot.includes('krags_cleaver') && !roster.loot.includes('zaars_edges') && roster.relicsOk && roster.aiOk, 'exclusives never drop as loot; every relic has a telegraph; every item has ai hints');
+    const share = await R(() => { const m = window.H.m, L = m.mode.loot; let r = 0, v = 0, n = 4000; for (let i = 0; i < n; i++) { if (m.rollLoot(L, m.rng, false).rarity === 'relic') r++; if (m.rollLoot(L, m.rng, true).rarity === 'relic') v++; } return { r: r / n, v: v / n }; });
+    check(share.r > 0.04 && share.r < 0.09 && share.v > share.r * 1.8, `relics are about 6% of loot, more at the vault (${(share.r * 100).toFixed(1)}% / ${(share.v * 100).toFixed(1)}%)`);
+
+    // shiv
+    await R(() => { const H = window.H; H.reset(); H.give('shiv'); H.at(0, 12, 0, 0); H.aim(1, 0); H.press('l', 0.05); });
+    const backstab = await R(() => window.H.loss(0));
+    await R(() => { const H = window.H; H.reset(); H.give('shiv'); H.at(0, 12, 0, Math.PI); H.aim(1, 0); H.press('l', 0.05); });
+    const front = await R(() => window.H.loss(0));
+    check(Math.abs(backstab - 7 * 2.5) < 1 && Math.abs(front - 7) < 1, `shiv: x2.5 from behind (${backstab.toFixed(1)} vs ${front.toFixed(1)} from the front)`);
+    await R(() => { const H = window.H; H.reset(); H.give('shiv'); H.at(0, 55, 0, 0); H.D[0].hp = 6; H.aim(1, 0); H.P.dashCd = 1.5; H.press('q', 0.05); H.step(0.5); });
+    const lunge = await R(() => ({ dead: window.H.D[0].dead, cd: window.H.P.dashCd }));
+    check(lunge.dead && lunge.cd === 0, `shiv Lunge: dash-stabs for the kill and resets the dash (dashCd ${lunge.cd})`);
+    await R(() => { const H = window.H; H.reset(); H.give('shiv'); H.at(0, 55, 0, 0); H.aim(1, 0); H.press('q', 0.05); H.step(0.4); });
+    check(await R(() => window.H.D[0].st.bleed > 0), 'shiv Lunge applies bleed');
+
+    // whopper
+    await R(() => { const H = window.H; H.reset(); H.give('whopper'); H.at(0, 40, 0); H.at(1, 36, 18); H.aim(1, 0); H.hold('q', 1.1); });
+    const clap = await R(() => ({ a: window.H.loss(0), b: window.H.loss(1), slow: window.H.D[0].st.slow > 0, moved: window.H.D[0].x - (window.H.ox + 40) }));
+    check(clap.a >= 10 && clap.b >= 10 && clap.slow && clap.moved > 5, `whopper Thunderclap: shockwave hurts, shoves and slows everyone in range (${clap.a.toFixed(0)}/${clap.b.toFixed(0)} dmg, pushed ${clap.moved.toFixed(0)}px)`);
+    await R(() => { const H = window.H; H.reset(); H.give('whopper'); H.step(1); H.P.fists.cd.special = 0; H.at(0, 40, 0); H.aim(1, 0); H.press('q', 0.05); H.step(0.3); });
+    check(await R(() => window.H.loss(0)) === 0, 'whopper Thunderclap needs a charge: a tap does nothing');
+    const slam = await R(() => {
+      const H = window.H, m = H.m, map = m.map;
+      H.reset(); H.give('whopper');
+      for (let ty = 3; ty < map.h - 3; ty++) for (let tx = 4; tx < map.w - 4; tx++) {
+        if (map.tile(tx, ty) === 0 && map.tile(tx + 1, ty) === 1 && map.tile(tx - 1, ty) === 0 && map.tile(tx - 2, ty) === 0 && map.tile(tx, ty - 1) === 0 && map.tile(tx, ty + 1) === 0) {
+          const d = H.D[0]; d.teleport((tx + 0.5) * 16 + 3, (ty + 0.5) * 16); H.P.teleport(d.x - 16, d.y); H.aim(1, 0);
+          H.press('l', 0.05); H.step(0.25); return { stun: d.st.stun, hp: H.loss(0) };
+        }
+      }
+      return null;
+    });
+    check(!slam || (slam.stun > 0 && slam.hp >= 26), `whopper: slamming a fighter into a wall stuns them (${slam && slam.stun.toFixed(2)}s)`);
+
+    // keg flail
+    await R(() => { const H = window.H; H.reset(); H.give('keg_flail'); H.at(0, 14, 0); H.at(1, 36, 4); H.aim(1, 0); H.press('l', 0.05); });
+    const fl = await R(() => ({ near: window.H.loss(0), tip: window.H.loss(1) }));
+    check(Math.abs(fl.near - 16) < 1 && Math.abs(fl.tip - 24) < 1, `flail: x1.5 at the tip of the chain (${fl.near.toFixed(0)} near, ${fl.tip.toFixed(0)} tip)`);
+    await R(() => { const H = window.H; H.reset(); H.give('keg_flail'); H.at(0, 22, 0); H.at(1, -22, 0); H.aim(1, 0); H.press('q', 0.05); H.step(1.8); });
+    const wh = await R(() => ({ a: window.H.loss(0), b: window.H.loss(1) }));
+    check(wh.a >= 40 && wh.b >= 40, `flail Whirl: spins through everyone around you (${wh.a.toFixed(0)}/${wh.b.toFixed(0)} dmg, including behind)`);
+
+    // arbalest
+    await R(() => { const H = window.H; H.reset(); H.give('arbalest'); H.at(0, 80, 0); H.at(1, 140, 0); H.at(2, 200, 0); H.aim(1, 0); H.press('l', 0.05); H.step(0.7); });
+    const ar = await R(() => [0, 1, 2].map((i) => window.H.loss(i)));
+    check(ar.every((v) => v >= 29), `arbalest: one bolt pierces everyone in line (${ar.map((v) => v.toFixed(0))})`);
+    await R(() => { const H = window.H; H.reset(); H.give('arbalest'); H.at(0, 90, 0); H.aim(1, 0); H.press('q', 0.05); H.step(0.1); window.H.rooted = H.P.st.root > 0; H.step(1); });
+    const br = await R(() => ({ rooted: window.H.rooted, loss: window.H.loss(0), cd: window.H.P.item.cd.primary }));
+    check(br.rooted && br.loss >= 3 * 22 - 1 && br.cd <= 0, `arbalest Brace: kneel (rooted), then 3 bolts with no reload (${br.loss.toFixed(0)} dmg)`);
+
+    // beast hook
+    await R(() => { const H = window.H; H.reset(); H.give('beast_hook'); H.at(0, 120, 0); H.aim(1, 0); H.P.fists.cd.primary = 0; H.press('l', 0.05); H.step(0.9); });
+    const hk = await R(() => ({ x: window.H.D[0].x - window.H.ox, loss: window.H.loss(0) }));
+    check(hk.x < 80 && hk.loss >= 10, `beast hook: hits for 10 and yanks the target toward you (${hk.x.toFixed(0)}px away from 120)`);
+    await R(() => { const H = window.H; H.reset(); H.give('beast_hook'); H.at(0, 150, 0); H.aim(1, 0); H.press('q', 0.05); H.step(0.9); });
+    const rl = await R(() => ({ gap: Math.hypot(window.H.D[0].x - window.H.P.x, window.H.D[0].y - window.H.P.y), moved: window.H.P.x - window.H.ox }));
+    check(rl.gap < 30 && rl.moved > 100, `beast hook Reel: pulls you across to the fighter (moved ${rl.moved.toFixed(0)}px)`);
+
+    // mantrap
+    await R(() => { const H = window.H; H.reset(); H.give('mantrap'); H.aim(30, 0); H.press('l', 0.05); H.step(0.6); H.D[0].teleport(H.P.x + 30, H.P.y); H.step(0.3); });
+    const tr = await R(() => ({ loss: window.H.loss(0), root: window.H.D[0].st.root }));
+    check(tr.loss >= 20 && tr.root > 0.8, `mantrap: places a trap that snaps on a victim (${tr.loss.toFixed(0)} dmg, rooted ${tr.root.toFixed(1)}s)`);
+    const cap = await R(() => { const H = window.H; H.reset(); H.give('mantrap'); H.aim(1, 0); for (let i = 0; i < 5; i++) { H.P.item.cd.primary = 0; H.press('l', 0.05); H.step(0.05); } return H.m.areas.pool.active.filter((a) => a.kind === 'trap').length; });
+    check(cap === 3, `mantrap: at most 3 traps at once (${cap})`);
+    await R(() => { const H = window.H; H.reset(); H.give('mantrap'); H.at(0, 100, 0); H.aim(1, 0); H.P.intent.tx = H.D[0].x; H.P.intent.ty = H.D[0].y; H.P.tx = H.D[0].x; H.P.ty = H.D[0].y; H.press('q', 0.05); H.step(1.2); });
+    check(await R(() => window.H.loss(0) >= 20 && window.H.D[0].st.root > 0), 'mantrap Toss: lobbed trap snaps shut on landing');
+
+    // old staff
+    await R(() => { const H = window.H; H.reset(); H.give('old_staff'); H.at(0, 150, 0); H.aim(1, 0); H.press('l', 0.05); H.step(0.05); window.H.tele = H.m.telegraphs.count; H.step(0.8); });
+    check(await R(() => window.H.tele >= 1 && window.H.loss(0) >= 45), 'old staff: shows a telegraph line, then the beam hits for 45');
+    await R(() => { const H = window.H; H.reset(); H.give('old_staff'); H.at(0, 100, -20); H.at(1, 100, 20); H.aim(1, 0); H.press('q', 0.05); H.step(0.05); H.step(1.2); });
+    const sw = await R(() => [window.H.loss(0), window.H.loss(1)]);
+    check(sw.every((v) => v >= 24 && v < 30), `old staff Sweep: the wedge hits each fighter in it once (${sw.map((v) => v.toFixed(0))})`);
+    await R(() => { const H = window.H; H.reset(); H.give('old_staff'); H.at(0, 150, 0); H.aim(1, 0); H.press('l', 0.05); H.step(0.3); window.H.t1 = H.m.telegraphs.threat(H.D[0].x, H.D[0].y, 5, H.D[0] === H.P ? null : H.D[1]); });
+    check(await R(() => !!window.H.t1), 'the telegraph is visible to the AI (telegraphs.threat finds a fighter standing in the line)');
+
+    // veilwalker net
+    await R(() => { const H = window.H; H.reset(); H.give('veilwalker_net'); H.at(0, 100, 0); H.at(1, 110, 12); H.aim(1, 0); H.P.intent.tx = H.D[0].x; H.P.intent.ty = H.D[0].y; H.press('l', 0.05); H.step(1.0); });
+    const nt = await R(() => [window.H.D[0].st.root, window.H.D[1].st.root]);
+    check(nt[0] > 0.4 && nt[1] > 0.4, `veilwalker net: bursts on contact and roots everyone near (${nt.map((v) => v.toFixed(1))}s)`);
+    await R(() => { const H = window.H; H.reset(); H.give('veilwalker_net'); H.aim(1, 0); H.P.intent.tx = H.P.x + 90; H.P.intent.ty = H.P.y; H.press('q', 0.05); H.step(0.1); H.D[0].teleport(H.P.x + 90, H.P.y); window.H.lure = !!H.m.areas.findDecoy(H.D[0]); H.step(3.1); });
+    check(await R(() => window.H.lure && window.H.D[0].st.root > 0), 'net Lure: a decoy bobber draws attention, then springs a net');
+
+    // sad sermon
+    await R(() => { const H = window.H; H.reset(); H.give('sad_sermon'); H.at(0, 90, 0); H.aim(1, 0); H.P.intent.tx = H.P.x + 90; H.P.intent.ty = H.P.y; H.press('l', 0.05); H.step(0.05); window.H.ring = H.m.telegraphs.pool.active.some((t) => t.type === 'ring'); H.step(1.7); });
+    const sm = await R(() => ({ ring: window.H.ring, sil: window.H.D[0].st.silence, loss: window.H.loss(0) }));
+    check(sm.ring && sm.sil > 0 && sm.loss > 2, `sad sermon: ring telegraph, then a dirge that silences and hurts (silence ${sm.sil.toFixed(1)}s, ${sm.loss.toFixed(1)} dmg)`);
+    await R(() => { const H = window.H; H.reset(); H.give('sad_sermon'); H.at(0, 20, 0); H.aim(1, 0); H.press('q', 0.05); H.P.intent.mx = 1; H.step(0.5); H.P.intent.mx = 0; H.D[0].teleport(H.P.x + 25, H.P.y); H.step(0.5); });
+    const lr = await R(() => { const a = window.H.m.areas.pool.active.find((q) => q.kind === 'dirge'); return a && Math.abs(a.x - window.H.P.x) < 2 && window.H.D[0].st.silence > 0; });
+    check(lr, 'sad sermon Last Rites: the dirge follows you as an aura');
+
+    // wind pouch
+    const dd = await R(() => { const H = window.H; H.reset(); H.P.teleport(H.ox - 20, H.oy); H.P.intent.mx = 1; H.P.intent.dash = true; H.step(0.017); H.P.intent.dash = false; H.P.intent.mx = 0; const x0 = H.P.x; H.step(0.4); const base = H.P.x - x0; const cd0 = H.P.dashCdMax;
+      H.reset(); H.give('wind_pouch'); H.P.teleport(H.ox - 20, H.oy); H.P.intent.mx = 1; H.P.intent.dash = true; H.step(0.017); H.P.intent.dash = false; H.P.intent.mx = 0; const y0 = H.P.x; H.step(0.4); return { base, boosted: H.P.x - y0, cd0, cd1: H.P.dashCdMax }; });
+    check(dd.boosted / dd.base > 1.25 && dd.boosted / dd.base < 1.5 && Math.abs(dd.cd1 / dd.cd0 - 0.8) < 0.02, `wind pouch passive: dash x${(dd.boosted / dd.base).toFixed(2)} distance, cooldown x${(dd.cd1 / dd.cd0).toFixed(2)} (works from the pack, not held)`);
+    await R(() => { const H = window.H; H.reset(); H.give('wind_pouch'); H.at(0, 40, 26); H.at(1, 100, -40); H.aim(1, 0); H.m.projectiles.fly({ x: H.P.x + 60, y: H.P.y, angle: Math.PI, speed: 150, range: 300, damage: 10, owner: H.D[1], r: 2, kind: 'arrow' }); H.press('l', 0.05); H.step(0.3); });
+    const gs = await R(() => ({ push: window.H.D[0].x - window.H.ox, refl: window.H.m.projectiles.pool.active.some((q) => q.owner === window.H.P && q.vx > 0) }));
+    check(gs.push > 45 && gs.refl, `wind pouch Gust: shoves fighters (${gs.push.toFixed(0)}px) and turns a projectile around`);
+    await R(() => { const H = window.H; H.reset(); H.give('wind_pouch'); H.press('q', 0.05); H.step(0.05); });
+    check(await R(() => window.H.P.st.haste > 2), 'wind pouch Tailwind: +50% move speed for 3 s');
+
+    // tonic
+    await R(() => { const H = window.H; H.reset(); H.give('clockheart_tonic'); H.P.hp = 100; H.press('l', 0.05); H.step(1.2); });
+    const tn = await R(() => ({ hp: window.H.P.hp, slow: window.H.P.st.slow, ch: window.H.P.item.state.charges }));
+    check(Math.abs(tn.hp - 130) < 1 && tn.slow > 0.5 && tn.ch === 1, `tonic: heals 30 over a second, then slows (hp ${tn.hp.toFixed(0)}, charges ${tn.ch})`);
+    await R(() => { window.H.step(18.5); });
+    check(await R(() => window.H.P.item.state.charges === 2), 'tonic: a charge recharges after 18 s');
+    await R(() => { const H = window.H; H.reset(); H.give('clockheart_tonic'); H.at(0, 100, 0); H.aim(1, 0); H.P.intent.tx = H.D[0].x; H.P.intent.ty = H.D[0].y; H.press('q', 0.05); H.step(1.0); });
+    const sp = await R(() => ({ d: window.H.D[0].st.slow, me: window.H.P.st.slow, loss: window.H.loss(0) }));
+    check(sp.d > 1 && sp.me === 0 && sp.loss === 0, `tonic Splash: enemies get only the slow (${sp.d.toFixed(1)}s, no damage)`);
+
+    // amethyst shard
+    const sh = await R(() => { const H = window.H; H.reset(); H.give('amethyst_shard'); H.step(8.2); const ready = H.P.shieldReady; const hp0 = H.P.hp; window.__oweblock.damageFrom(H.D[0], H.P, 100); const hit1 = hp0 - H.P.hp; const hp1 = H.P.hp; window.__oweblock.damageFrom(H.D[0], H.P, 100); return { ready, hit1, hit2: hp1 - H.P.hp }; });
+    check(sh.ready && Math.abs(sh.hit1 - 40) < 1 && Math.abs(sh.hit2 - 100) < 1, `amethyst shard passive: every 8 s the next hit is cut by 60% (${sh.hit1.toFixed(0)} then ${sh.hit2.toFixed(0)})`);
+    const cr = await R(() => { const H = window.H; H.reset(); H.give('amethyst_shard'); H.aim(1, 0); H.P.intent.tx = H.P.x + 32; H.P.intent.ty = H.P.y; H.press('l', 0.05); const grown = H.m.crystals.list.length;
+      H.at(0, 80, 0); H.m.projectiles.fly({ x: H.P.x + 60, y: H.P.y, angle: Math.PI, speed: 200, range: 300, damage: 10, owner: H.D[0], r: 2, kind: 'arrow' }); H.step(0.5); const hp = H.P.hp;
+      H.P.item.cd.special = 0; H.press('q', 0.05); return { grown, hpFull: hp === 300, shot: H.m.projectiles.count, left: H.m.crystals.list.length }; });
+    check(cr.grown === 1 && cr.hpFull && cr.left === 0, `shard: crystal grows at the cursor, blocks an arrow, and Shatter bursts it (${cr.shot} slivers)`);
+
+    // exclusives
+    const cl = await R(() => { const H = window.H; H.reset(); H.give('krags_cleaver'); H.at(0, 18, 0); H.aim(1, 0); const out = []; for (let i = 0; i < 3; i++) { const l0 = H.loss(0); H.P.item.cd.primary = 0; H.press('l', 0.05); out.push(H.loss(0) - l0); H.step(0.05); } return { out, bleed: H.D[0].st.bleed }; });
+    check(cl.out[2] > cl.out[0] * 1.4 && cl.bleed > 0, `Krag's Cleaver: third hit cleaves harder and bleeds (${cl.out.map((v) => v.toFixed(0))})`);
+    await R(() => { const H = window.H; H.reset(); H.give('krags_cleaver'); H.at(0, 80, 0); H.aim(1, 0); H.press('q', 0.05); H.step(0.6); });
+    check(await R(() => window.H.loss(0) >= 30), "Krag's Cleaver Cutter's Charge: shoulder charge into a free heavy hit");
+    await R(() => { const H = window.H; H.reset(); H.give('zaars_edges'); H.at(0, 80, 0); H.aim(1, 0); H.press('l', 0.05); H.step(0.9); });
+    check(await R(() => window.H.loss(0) >= 18), "Zaar's Edges: three knives in quick succession");
+    const hoop = await R(() => { const H = window.H; H.reset(); H.give('zaars_edges'); H.aim(1, 0); H.press('q', 0.05); H.step(1.2); return H.m.areas.pool.active.filter((a) => a.kind === 'fire').length; });
+    check(hoop >= 3, `Zaar's Ring of Fire: the hoop leaves a fire trail (${hoop} pools)`);
+    check(errors.length === 0, 'roster scenarios ran with no console errors ' + errors.join(' | '));
+    await ctx.close();
+  }
+
   // 2c. stress: ~300 projectiles and ~1000 particles in view must stay inside the frame budget
   {
     const { page, ctx, errors } = await open('?debug=1&seed=7&dummies=40', { viewport: { width: 960, height: 540 } });

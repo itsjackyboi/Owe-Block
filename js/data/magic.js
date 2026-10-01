@@ -1,2 +1,56 @@
-// Relics and everyday magic items (Stage 4). Same entry shape as weapons.js.
-export default [];
+// Relics and everyday magic items. Same entry shape as weapons.js. Every relic must declare a `telegraph`:
+// the readable warning its attack gives (the AI reads the same telegraphs the player sees).
+export default [
+  {
+    id: 'old_staff', name: 'OLD STAFF', kind: 'relic', loot: true, rarity: 'relic', icon: 'old_staff',
+    effect: 'CHANNELLED BEAM THROUGH WALLS. Q: SWEEP',
+    telegraph: { primary: 'line', special: 'arc' },
+    primary: { action: 'channelBeam', cooldown: [14, 13, 12, 11, 10], params: { channel: 0.6, length: 260, width: 5, damage: [45, 50, 55, 62, 70], knockback: 120, turn: 1.4, moveSlow: 0.35 } },
+    special: { action: 'sweepBeam', cooldown: [20, 19, 18, 17, 16], params: { windup: 0.5, sweep: 0.45, arc: 60, length: 200, width: 6, damage: [25, 28, 32, 36, 42], knockback: 80, moveSlow: 0.35 } },
+    passive: null,
+    ai: { idealRange: 130, minRange: 40, aim: 'lead', useWhen: 'inRange', specialWhen: 'inRange', relicWhen: 'line' },
+  },
+  {
+    id: 'veilwalker_net', name: 'VEILWALKER NET', kind: 'relic', loot: true, rarity: 'relic', icon: 'veilwalker_net',
+    effect: 'THROWN NET ROOTS EVERYONE IT BURSTS ON. Q: LURE',
+    telegraph: { primary: 'flight', special: 'bobber' },
+    primary: { action: 'projectile', cooldown: [15, 14, 13, 12, 11], params: { damage: 0, speed: 210, range: 180, toCursor: true, radius: 4, kind: 'net', knockback: 0, burst: { r: [28, 30, 32, 34, 36], root: [1.6, 1.7, 1.8, 1.9, 2.0] } } },
+    special: { action: 'decoy', cooldown: [12, 11, 10, 9, 8], params: { range: 140, duration: 3 } },
+    passive: null,
+    ai: { idealRange: 90, minRange: 20, aim: 'lead', useWhen: 'inRange', specialWhen: 'cornered', relicWhen: 'cornered' },
+  },
+  {
+    id: 'sad_sermon', name: 'SAD SERMON', kind: 'relic', loot: true, rarity: 'relic', icon: 'sad_sermon',
+    effect: 'DIRGE SILENCES AND HURTS. Q: LAST RITES',
+    telegraph: { primary: 'ring', special: 'aura' },
+    primary: { action: 'delayedArea', cooldown: [18, 17, 16, 15, 14], params: { range: 140, delay: 0.8, area: { kind: 'dirge', r: [48, 50, 52, 54, 56], life: [5, 5.5, 6, 6.5, 7], dps: [4, 5, 6, 7, 8] } } },
+    special: { action: 'areaAura', cooldown: [16, 15, 14, 13, 12], params: { duration: 3, area: { kind: 'dirge', r: 40, dps: [4, 5, 6, 7, 8] } } },
+    passive: null,
+    ai: { idealRange: 100, minRange: 20, aim: 'lead', useWhen: 'inRange', specialWhen: 'surrounded', relicWhen: 'fight' },
+  },
+  {
+    id: 'wind_pouch', name: 'WOLENDI WIND POUCH', kind: 'everyday', loot: true, rarity: 'common', icon: 'wind_pouch',
+    effect: 'ANY SLOT: DASH FARTHER, RECHARGES FASTER. HELD: GUST. Q: TAILWIND',
+    primary: { action: 'gust', cooldown: [3, 2.8, 2.6, 2.4, 2.2], params: { range: [70, 74, 78, 82, 86], arc: 80, knockback: 300, damage: 2 } },
+    special: { action: 'selfBuff', cooldown: [10, 9.5, 9, 8.5, 8], params: { status: 'haste', duration: 3 } },
+    passive: { dashDist: 1.35, dashCd: 0.8 },
+    ai: { idealRange: 40, minRange: 0, aim: 'direct', useWhen: 'inRange', specialWhen: 'retreating', support: true },
+  },
+  {
+    id: 'clockheart_tonic', name: 'CLOCKHEART TONIC', kind: 'everyday', loot: true, rarity: 'common', icon: 'clockheart_tonic',
+    effect: 'DRINK: HEAL, THEN SLOWED. 2 CHARGES. Q: SPLASH',
+    charges: { max: 2, recharge: 18 },
+    primary: { action: 'consume', cooldown: 0.6, params: { heal: [30, 34, 38, 42, 48], healTime: 1, slowPow: 0.35, slowDur: 2.5 } },
+    special: { action: 'throwArea', cooldown: 0.8, params: { range: 120, flightSpeed: 200, kind: 'tonic', area: { kind: 'splash', r: 26, status: { name: 'slow', dur: 2.5, power: 0.35 } } } },
+    passive: null,
+    ai: { idealRange: 60, minRange: 0, aim: 'lob', useWhen: 'lowHp', specialWhen: 'inRange', support: true, heal: true },
+  },
+  {
+    id: 'amethyst_shard', name: 'AMETHYST SHARD', kind: 'everyday', loot: true, rarity: 'uncommon', icon: 'amethyst_shard',
+    effect: 'ANY SLOT: EVERY 8 S THE NEXT HIT IS -60%. HELD: GROW CRYSTAL COVER. Q: SHATTER',
+    primary: { action: 'spawnCover', cooldown: [6, 5.5, 5, 4.5, 4], params: { range: 40 } },
+    special: { action: 'shatter', cooldown: [3, 3, 2.5, 2.5, 2], params: { damage: [8, 9, 10, 11, 12] } },
+    passive: { shield: 8 },
+    ai: { idealRange: 60, minRange: 0, aim: 'direct', useWhen: 'inRange', specialWhen: 'inRange', support: true },
+  },
+];

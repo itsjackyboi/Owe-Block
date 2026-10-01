@@ -1,6 +1,9 @@
 import { Pool } from '../core/pool.js';
 import { angleDiff } from '../core/math.js';
 import { damage } from './combat.js';
+import { applyStatus } from './statuses.js';
+import { T } from './map.js';
+import { DASH, TILE } from '../config.js';
 
 const MODE = { FLY: 0, LOB: 1, ORBIT: 2 };
 const STEP = 8; // max px per collision substep
@@ -10,7 +13,7 @@ function make() {
     mode: 0, x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, r: 2, damage: 0, kb: 0, owner: null, inst: null, kind: 'arrow',
     speed: 0, travelled: 0, range: 0, pierce: 0, bounce: 0, returns: false, phase: 0, catchCut: 0, curve: 0, life: 0,
     status: null, reflected: false, hits: [], hitT: [], ang: 0, unblockable: false, itemId: null,
-    sx: 0, sy: 0, tx: 0, ty: 0, t: 0, T: 1, area: null, oa: 0, oR: 0, blocks: false,
+    sx: 0, sy: 0, tx: 0, ty: 0, t: 0, T: 1, area: null, oa: 0, oR: 0, blocks: false, hook: null, pull: 0, burst: null, trail: null, trailD: 0,
   };
 }
 
@@ -34,6 +37,7 @@ export class Projectiles {
     p.pierce = o.pierce || 0; p.bounce = o.bounce || 0; p.returns = !!o.returns; p.phase = 0; p.catchCut = o.catchCut || 0;
     p.curve = o.curve || 0; p.life = o.life || (o.returns ? 6 : 4); p.reflected = false; p.status = o.status || null; p.hits.length = 0; p.hitT.length = 0;
     p.ang = o.ang || 0; p.unblockable = !!o.unblockable; p.itemId = o.itemId || null; p.area = null; p.blocks = false;
+    p.hook = o.hook || null; p.pull = o.pull || 0; p.burst = o.burst || null; p.trail = o.trail || null; p.trailD = 0;
     return p;
   }
 
@@ -65,7 +69,7 @@ export class Projectiles {
 
   free(p) {
     if (p.mode === MODE.ORBIT) this.orbits--;
-    if (p.returns && p.inst) p.inst.state.out = false;
+    if ((p.returns || p.hook) && p.inst) p.inst.state.out = false;
     if (p.mode === MODE.ORBIT && p.inst && !this.pool.active.some((q) => q !== p && q.mode === MODE.ORBIT && q.inst === p.inst)) p.inst.state.orbit = false;
     p.owner = null; p.inst = null;
     this.pool.release(p);
@@ -78,7 +82,7 @@ export class Projectiles {
       p.px = p.x; p.py = p.y;
       if (p.mode === MODE.LOB) { if (this.updateLob(p, dt)) this.free(p); continue; }
       if (p.mode === MODE.ORBIT) { if (this.updateOrbit(p, dt)) this.free(p); continue; }
-      if (this.updateFly(p, dt, m)) this.free(p);
+      if (this.updateFly(p, dt, m)) { if (p.burst) this.explode(p); this.free(p); }
     }
     if (this.orbits > 0) this.blockProjectiles();
   }
@@ -137,9 +141,12 @@ export class Projectiles {
       p.x += dx; p.y += dy;
       p.travelled += Math.hypot(dx, dy);
       p.ang += sdt * 14;
+      if (p.trail) { p.trailD += Math.hypot(dx, dy); if (p.trailD >= p.trail.every) { p.trailD = 0; m.areas.spawn('fire', p.x, p.y, p.trail.r, p.trail.life, p.owner, { dps: p.trail.dps, itemId: p.itemId }); } }
 
       // walls: bounce, turn a boomerang around, or die. A returning boomerang flies over everything.
       if (!(p.returns && p.phase === 1) && m.map.isSolidPx(p.x, p.y)) {
+        if (m.map.tileAtPx(p.x, p.y) === T.CRYSTAL) m.crystals.damage(Math.floor(p.x / TILE), Math.floor(p.y / TILE), p.damage || 6);
+        if (p.hook) { this.hookWall(p, dx, dy); return true; }
         p.x -= dx; p.y -= dy;
         if (p.bounce > 0) {
           p.bounce--;
@@ -171,6 +178,7 @@ export class Projectiles {
         }
         p.hits.push(t.id);
         const ang = Math.atan2(p.vy, p.vx);
+        if (p.hook) { this.hookHit(p, t, ang); return true; }
         damage(m, t, p.damage, { source: p.owner, kind: 'projectile', kb: p.kb, ang, itemId: p.itemId, status: p.status });
         if (!p.returns) {
           if (p.pierce <= 0) { return true; }
@@ -186,6 +194,49 @@ export class Projectiles {
     }
     p.life -= dt;
     return p.life <= 0;
+  }
+
+  // Beast Hook, pull: damage and yank the target toward the thrower; self: reel the thrower to the target.
+  hookHit(p, t, ang) {
+    const o = p.owner;
+    if (p.hook === 'pull') {
+      damage(this.match, t, p.damage, { source: o, kind: 'projectile', kb: 0, ang, itemId: p.itemId, status: p.status });
+      const a = Math.atan2(o.y - t.y, o.x - t.x), d = Math.hypot(o.x - t.x, o.y - t.y);
+      const dist = Math.min(p.pull || 60, Math.max(0, d - 14));
+      t.kx += Math.cos(a) * dist * 8; t.ky += Math.sin(a) * dist * 8;
+      this.match.fx.sparks(t.x, t.y, 6, '#d8b078', 90, 0.3);
+    } else this.reel(o, t.x, t.y, 14);
+  }
+
+  hookWall(p, dx, dy) {
+    if (p.hook === 'self') this.reel(p.owner, p.x - dx, p.y - dy, 10);
+    this.match.fx.sparks(p.x, p.y, 4, '#d8b078', 60, 0.2);
+  }
+
+  // Pull yourself toward a point at dash speed (crosses pits, no invulnerability).
+  reel(o, x, y, stop) {
+    if (!o || o.dead) return;
+    const d = Math.hypot(x - o.x, y - o.y);
+    if (d < stop + 2) return;
+    o.dashDx = (x - o.x) / d; o.dashDy = (y - o.y) / d;
+    o.dashT = Math.min(0.7, (d - stop) / DASH.speed);
+    o.cancelBusy();
+    this.match.fx.dust(o.x, o.y + 4, 4);
+  }
+
+  // Net: roots everyone inside the burst radius.
+  explode(p) {
+    const m = this.match, b = p.burst;
+    m.hash.query(p.x, p.y, b.r, m.tmp);
+    for (let k = 0; k < m.tmp.length; k++) {
+      const t = m.tmp[k];
+      if (t.dead || t === p.owner) continue;
+      applyStatus(t, 'root', b.root, 0, p.owner);
+      m.fx.popup(t.x, t.y - 12, 'NETTED', '#c8e8ff');
+    }
+    m.fx.ring(p.x, p.y, b.r, '#c8e8ff');
+    m.fx.sparks(p.x, p.y, 12, '#c8e8ff', 80, 0.4);
+    m.sfx('net', p.x, p.y);
   }
 
   // A boomerang snaps around at the end of its outward flight and heads straight back, so a target in line is hit twice.
@@ -231,11 +282,25 @@ export class Projectiles {
       if (p.mode === MODE.LOB) {
         const u = Math.min(1, p.t / p.T), h = Math.sin(u * Math.PI) * 26;
         ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - 2, y + 1, 5, 2);
-        drawRot(ctx, assets.iconCanvas('ancient_pot'), x, y - Math.round(h), p.ang, 0.75);
-      } else if (p.kind === 'arrow') {
-        const c = Math.cos(Math.atan2(p.vy, p.vx)), s = Math.sin(Math.atan2(p.vy, p.vx));
-        for (let k = -3; k <= 3; k++) { ctx.fillStyle = k === 3 ? '#e8ecf4' : (k === -3 ? '#f0f0f0' : '#d8b078'); ctx.fillRect(Math.round(x + c * k), Math.round(y + s * k), 1, 1); }
+        drawRot(ctx, assets.iconCanvas(p.itemId || 'ancient_pot'), x, y - Math.round(h), p.ang, 0.75);
+      } else if (p.kind === 'arrow' || p.kind === 'bolt') {
+        const ang = Math.atan2(p.vy, p.vx), c = Math.cos(ang), s = Math.sin(ang), bolt = p.kind === 'bolt';
+        for (let k = -3; k <= 3; k++) { ctx.fillStyle = k === 3 ? '#e8ecf4' : (k === -3 ? '#f0f0f0' : (bolt ? '#fff4c0' : '#d8b078')); ctx.fillRect(Math.round(x + c * k), Math.round(y + s * k), bolt ? 2 : 1, bolt ? 2 : 1); }
         ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round(x + c * 4), Math.round(y + s * 4), 1, 1);
+        if (bolt) { ctx.fillStyle = 'rgba(255,244,192,0.5)'; for (let k = 4; k < 14; k += 2) ctx.fillRect(Math.round(x - c * k), Math.round(y - s * k), 1, 1); }
+      } else if (p.kind === 'knife') {
+        ctx.fillStyle = '#e8ecf4'; ctx.fillRect(x - 1, y - 1, 3, 3); ctx.fillStyle = '#10101c'; ctx.fillRect(Math.round(x + Math.cos(p.ang) * 3), Math.round(y + Math.sin(p.ang) * 3), 1, 1);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round(x - Math.cos(p.ang) * 3), Math.round(y - Math.sin(p.ang) * 3), 1, 1);
+      } else if (p.kind === 'sliver') {
+        ctx.fillStyle = '#c88aff'; ctx.fillRect(x - 1, y - 1, 2, 2); ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y - 1, 1, 1);
+      } else if (p.kind === 'hoop') {
+        for (let k = 0; k < 12; k++) { const a = p.ang + (k / 12) * 6.283; ctx.fillStyle = k % 3 ? '#ff8a2a' : '#ffe080'; ctx.fillRect(Math.round(x + Math.cos(a) * 6), Math.round(y + Math.sin(a) * 6), 2, 2); }
+      } else if (p.kind === 'hook') {
+        const o = p.owner;
+        if (o) { const dx = p.x - o.x, dy = p.y - (o.y - 3), n = Math.ceil(Math.hypot(dx, dy) / 3); ctx.fillStyle = '#d8b078'; for (let k = 1; k < n; k++) ctx.fillRect(Math.round(o.x + (dx * k) / n - cam.rx), Math.round(o.y - 3 + (dy * k) / n - cam.ry), 1, 1); }
+        ctx.fillStyle = '#c8ccd8'; ctx.fillRect(x - 1, y - 1, 3, 3); ctx.fillStyle = '#10101c'; ctx.fillRect(x, y, 1, 1);
+      } else if (p.kind === 'net') {
+        drawRot(ctx, assets.iconCanvas('veilwalker_net'), x, y, p.ang * 0.5, 0.8);
       } else {
         drawRot(ctx, assets.iconCanvas('drifters_call'), x, y, p.ang, 1);
       }

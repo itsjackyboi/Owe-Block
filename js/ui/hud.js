@@ -1,4 +1,4 @@
-import { INTERNAL_W, INTERNAL_H, DASH } from '../config.js';
+import { INTERNAL_W, INTERNAL_H } from '../config.js';
 import { xpNeeded } from '../game/levelup.js';
 import { drawText } from './font.js';
 import { T } from '../game/map.js';
@@ -22,7 +22,7 @@ export function drawHud(ctx, match) {
   ctx.fillStyle = '#ffd860'; ctx.fillRect(35, 21, Math.round(56 * Math.min(1, p.xp / need)), 5);
   drawText(ctx, p.xp + '/' + need, 96, 20, { color: '#c8b060' });
 
-  const cd = p.dashCd > 0 ? 1 - p.dashCd / (DASH.cooldown * p.dashCdMul) : 1;
+  const cd = p.dashCd > 0 ? 1 - p.dashCd / p.dashCdMax : 1;
   ctx.fillStyle = '#10101c'; ctx.fillRect(6, 30, 52, 6);
   ctx.fillStyle = cd >= 1 ? '#7ae0a0' : '#3a6a58'; ctx.fillRect(7, 31, Math.round(50 * cd), 4);
   drawText(ctx, 'DASH', 62, 29, { color: cd >= 1 ? '#7ae0a0' : '#8a8aa0' });
@@ -96,6 +96,10 @@ function drawSlots(ctx, match, p, assets) {
     // level pips along the bottom
     ctx.fillStyle = '#ffd860';
     for (let l = 0; l < inst.level; l++) ctx.fillRect(x + 3 + l * 4, y + W - 3, 3, 2);
+    // charges (tonic): one pip per charge, lit when available
+    if (inst.def.charges) {
+      for (let c = 0; c < inst.def.charges.max; c++) { ctx.fillStyle = '#10101c'; ctx.fillRect(x + 12 + c * 5, y + W - 6, 4, 4); ctx.fillStyle = c < inst.state.charges ? '#7ae0a0' : '#34503c'; ctx.fillRect(x + 13 + c * 5, y + W - 5, 2, 2); }
+    }
     // Q special chip, bottom-right, fills as it recharges
     if (inst.def.special) {
       const qx = x + W - 8, qy = y + 1;
