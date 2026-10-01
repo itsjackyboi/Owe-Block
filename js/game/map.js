@@ -64,6 +64,28 @@ export class GameMap {
     return moved;
   }
 
+  // Walks from (x0,y0) toward (x1,y1) and returns the last point before a wall tile (cover is flown over).
+  lastOpenPoint(x0, y0, x1, y1) {
+    const d = Math.hypot(x1 - x0, y1 - y0);
+    const n = Math.max(1, Math.ceil(d / 4));
+    let lx = x0, ly = y0;
+    for (let i = 1; i <= n; i++) {
+      const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n;
+      if (this.tileAtPx(x, y) === T.WALL) break;
+      lx = x; ly = y;
+    }
+    return { x: lx, y: ly };
+  }
+
+  // True if no wall tile lies on the straight line (cover does not block sight).
+  clearLine(x0, y0, x1, y1) {
+    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 6));
+    for (let i = 1; i < n; i++) {
+      if (this.tileAtPx(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n) === T.WALL) return false;
+    }
+    return true;
+  }
+
   // ---- rendering ----
 
   draw(ctx, cam) {

@@ -88,5 +88,23 @@ export function generateMines(rng, w, h) {
     if (spawns.length >= 80) break;
   }
 
-  return { w, h, tiles, deco, chambers: live, spawns };
+  // 7. loot candidates: clusters inside chambers, a vault in the deepest chamber, scattered XP spots
+  const lootPoints = [], vaultPoints = [], xpPoints = [];
+  const spot = (cx, cy, rad) => {
+    for (let tries = 0; tries < 12; tries++) {
+      const a = rng.float(0, 6.28), d = rng.float(0, rad);
+      const tx = Math.round(cx + Math.cos(a) * d), ty = Math.round(cy + Math.sin(a) * d);
+      if (tx > 2 && ty > 2 && tx < w - 3 && ty < h - 3 && tiles[ty * w + tx] === T.FLOOR) return { x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE };
+    }
+    return null;
+  };
+  let deepest = live[0];
+  for (const c of live) if (c.depth > deepest.depth) deepest = c;
+  for (const c of live) {
+    const n = rng.int(2, 6);
+    for (let k = 0; k < n; k++) { const pt = spot(c.x, c.y, c.r * 0.8); if (pt) { pt.chamber = c === deepest ? 'vault' : 'chamber'; (c === deepest ? vaultPoints : lootPoints).push(pt); } }
+  }
+  for (const f of open.slice(0, 900)) xpPoints.push({ x: (f.x + 0.5) * TILE, y: (f.y + 0.5) * TILE });
+
+  return { w, h, tiles, deco, chambers: live, spawns, lootPoints, vaultPoints, xpPoints, vault: deepest };
 }

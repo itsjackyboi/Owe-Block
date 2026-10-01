@@ -27,6 +27,7 @@ const GLYPHS = {
   '=': '00000 00000 11111 00000 11111 00000 00000', '<': '00010 00100 01000 10000 01000 00100 00010',
   '>': '01000 00100 00010 00001 00010 00100 01000', '#': '01010 01010 11111 01010 11111 01010 01010',
   '*': '00000 10101 01110 11111 01110 10101 00000', _: '00000 00000 00000 00000 00000 00000 11111',
+  '[': '01110 01000 01000 01000 01000 01000 01110', ']': '01110 00010 00010 00010 00010 00010 01110',
   ' ': '00000 00000 00000 00000 00000 00000 00000',
 };
 
@@ -72,4 +73,17 @@ function blit(ctx, s, x, y, color, scale) {
     const gi = INDEX[s[i]] ?? QUESTION;
     ctx.drawImage(a, gi * 5, 0, 5, 7, x + i * 6 * scale, y, 5 * scale, 7 * scale);
   }
+}
+
+// Splits text into lines of at most `maxChars` characters, breaking on spaces.
+export function wrapText(text, maxChars) {
+  const words = String(text).split(' ');
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    if (line && (line + ' ' + w).length > maxChars) { lines.push(line); line = w; }
+    else line = line ? line + ' ' + w : w;
+  }
+  if (line) lines.push(line);
+  return lines;
 }

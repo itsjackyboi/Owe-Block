@@ -1,4 +1,5 @@
 import { hash2 } from './rng.js';
+import { proceduralIcon } from './icons.js';
 
 // Loads the manifest and sheets. Every draw call has a flat-colour fallback, so a missing image never breaks the game.
 export class Assets {
@@ -57,10 +58,53 @@ export class Assets {
     if (col) { ctx.fillStyle = col; ctx.fillRect(x, y, 16, 16); }
   }
 
-  icon(ctx, itemId, x, y) {
-    const ic = this.manifest.icons[itemId];
-    if (ic && this.drawFrame(ctx, ic.sheet, ic.frame, x, y)) return;
-    ctx.fillStyle = '#8a8aa0'; ctx.fillRect(x + 2, y + 2, 12, 12);
-    ctx.fillStyle = '#2a2a38'; ctx.fillRect(x + 4, y + 4, 8, 8);
+  // Cached 16x16 canvas for an item icon: sheet frame, else procedural pixel art, else a grey placeholder square.
+  iconCanvas(id) {
+    if (!this.iconCache) this.iconCache = new Map();
+    let c = this.iconCache.get(id);
+    if (c) return c;
+    c = document.createElement('canvas'); c.width = 16; c.height = 16;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    const ic = this.manifest.icons[id];
+    if (!(ic && this.drawFrame(g, ic.sheet, ic.frame, 0, 0))) {
+      const proc = proceduralIcon(id);
+      if (proc) g.drawImage(proc, 0, 0);
+      else { g.fillStyle = '#8a8aa0'; g.fillRect(2, 2, 12, 12); g.fillStyle = '#2a2a38'; g.fillRect(4, 4, 8, 8); }
+    }
+    this.iconCache.set(id, c);
+    return c;
+  }
+
+  // In-hand sprite: a dedicated 'held' frame if the manifest has one, otherwise the icon.
+  heldCanvas(id) {
+    if (!this.heldCache) this.heldCache = new Map();
+    let c = this.heldCache.get(id);
+    if (c) return c;
+    const h = this.manifest.held && this.manifest.held[id];
+    if (h) {
+      c = document.createElement('canvas'); c.width = 16; c.height = 16;
+      const g = c.getContext('2d');
+      g.imageSmoothingEnabled = false;
+      if (!this.drawFrame(g, h.sheet, h.frame, 0, 0)) c = null;
+    }
+    if (!c) c = this.iconCanvas(id);
+    this.heldCache.set(id, c);
+    return c;
+  }
+
+  heldScale(id) {
+    const h = this.manifest.held && this.manifest.held[id];
+    return (h && h.scale) || 1;
+  }
+
+  // Radians to add when the icon is drawn in hand so its business end points along the aim.
+  iconRot(id) {
+    const ic = (this.manifest.held && this.manifest.held[id]) || this.manifest.icons[id];
+    return ic && ic.rot ? (ic.rot * Math.PI) / 180 : 0;
+  }
+
+  drawIcon(ctx, id, x, y, scale = 1) {
+    ctx.drawImage(this.iconCanvas(id), x, y, 16 * scale, 16 * scale);
   }
 }
