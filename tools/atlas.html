@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Atlas (dev)</title>
+<style>body{margin:0;background:#222;color:#ddd;font:12px monospace}canvas{image-rendering:pixelated;display:block}</style>
+<canvas id="c"></canvas>
+<script type="module">
+// Dev page: ?sheet=<id>&zoom=4&c0=0&c1=999 draws a sheet (optionally only columns c0..c1-1) with grid + frame indices.
+// Add &roles=<tilesetId> (or &roles=characters / &roles=icons) to outline every frame the manifest assigns to a role, labelled with the role name.
+const q = new URLSearchParams(location.search);
+const id = q.get('sheet') || 'dungeon';
+const zoom = +(q.get('zoom') || 4);
+const manifest = await (await fetch('../assets/manifest.json')).json();
+const s = manifest.sheets[id];
+const img = new Image(); img.src = '../' + s.src; await img.decode();
+const [fw, fh] = s.frame, sp = s.spacing || 0, mg = s.margin || 0;
+const cols = s.columns, rows = s.rows;
+const c0 = +(q.get('c0') || 0), c1 = Math.min(cols, +(q.get('c1') || cols));
+const cell = (fw + 2) * zoom; // draw with gaps so labels fit: each frame blown up, label under
+const labelH = 11;
+const cw = (fw * zoom) + 6, ch = (fh * zoom) + labelH + 4;
+const c = document.getElementById('c');
+c.width = (c1 - c0) * cw; c.height = rows * ch;
+const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+g.fillStyle = '#3a3a48'; g.fillRect(0, 0, c.width, c.height);
+g.font = '10px monospace'; g.textBaseline = 'top';
+for (let r = 0; r < rows; r++) for (let k = c0; k < c1; k++) {
+  const i = r * cols + k, x = (k - c0) * cw, y = r * ch;
+  g.fillStyle = (r + k) % 2 ? '#44445a' : '#3a3a4c'; g.fillRect(x, y, cw, ch);
+  g.drawImage(img, mg + k * (fw + sp), mg + r * (fh + sp), fw, fh, x + 3, y + 2, fw * zoom, fh * zoom);
+  g.fillStyle = '#ffeb7a'; g.fillText(String(i), x + 3, y + fh * zoom + 3);
+  g.strokeStyle = '#00000088'; g.strokeRect(x + .5, y + .5, cw - 1, ch - 1);
+}
+const roles = q.get('roles');
+if (roles) {
+  const used = new Map(); // frame -> [labels]
+  const add = (frame, label) => { if (frame >= 0) { if (!used.has(frame)) used.set(frame, []); if (!used.get(frame).includes(label)) used.get(frame).push(label); } };
+  if (roles === 'characters') {
+    const ch = manifest.characters;
+    ch.body.forEach((f) => add(f, 'body'));
+    ch.hair.forEach((f) => add(f, 'hair'));
+    for (const layer of ['legs', 'torso', 'hat']) for (const [k, f] of Object.entries(ch[layer])) add(f, layer + ':' + k);
+  } else if (roles === 'icons') {
+    for (const [id, ic] of Object.entries(manifest.icons)) if (ic.sheet === id0()) add(ic.frame, id);
+  } else {
+    const ts = manifest.tilesets[roles];
+    if (ts && ts.sheet === id) for (const [role, list] of Object.entries(ts.roles)) list.forEach((f) => add(f, role));
+  }
+  function id0() { return id; }
+  g.font = '9px monospace';
+  for (const [frame, labels] of used) {
+    const r = Math.floor(frame / cols), k = frame % cols;
+    if (k < c0 || k >= c1) continue;
+    const x = (k - c0) * cw, y = r * ch;
+    g.strokeStyle = '#3cff7a'; g.lineWidth = 2; g.strokeRect(x + 2, y + 1, cw - 4, ch - 2);
+    g.fillStyle = '#000000cc'; g.fillRect(x + 3, y + 2, cw - 6, 9 * Math.min(labels.length, 3) + 1);
+    g.fillStyle = '#3cff7a';
+    labels.slice(0, 3).forEach((l, i) => g.fillText(l.slice(0, Math.floor((cw - 8) / 5.4)), x + 4, y + 3 + i * 9));
+  }
+}
+document.title = 'atlas-ready';
+</script>

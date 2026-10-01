@@ -1,0 +1,132 @@
+{
+  "_doc": [
+    "OWE BLOCK BRAWL asset manifest. JSON has no comments, so every entry below has a matching note under '_notes'.",
+    "sheets: { id: { src, frame:[w,h], spacing, margin, columns, rows } }. A frame index is row*columns + col, counted from 0 at the top-left.",
+    "  Open tools/atlas.html?sheet=<id> (with a local server) to see every sheet with its frame indices overlaid.",
+    "tilesets: { id: { sheet, roles:{ role:[frame,...] }, placeholder:{ role:'#hex' }, pitShade, _notes } }.",
+    "  When a role lists several frames, a position hash picks one per tile. Roles: floor, wall (brick face, drawn when the tile south of a wall is open),",
+    "  wallTop (solid mass), cover (solid prop on a floor), pit (void), deco (non-solid floor decal), hazard_* (telegraph markers).",
+    "  Frames that are not full tiles (cover, deco) are drawn over a floor tile, so transparency is fine.",
+    "characters: paper-doll layers drawn bottom to top: body, legs, torso, hair, hat. All layers are 16x16 frames of the 'chars' sheet.",
+    "  legs / torso / hat are keyed by outfit: red (Crimson Cutters), blue (Seaside Circus), grey (neutral Newcomer), police (Gobbler's sweep).",
+    "  The sheet ships orange and teal outfits; they stand in for red and blue. 'hair' and 'body' are plain lists of frames to pick from.",
+    "icons: { itemId: { sheet, frame } }. Any item without an icon falls back to a placeholder square. Icons are provisional until Stage 4.",
+    "anims: optional, empty for now. Future animated sheets: name: { sheet, row, frames, fps }.",
+    "Fallback rule: if an image fails to load, or a role or key is missing, a flat rectangle in the role's placeholder colour is drawn.",
+    "  ?placeholders=1 forces placeholders everywhere; the game must stay fully playable that way."
+  ],
+
+  "sheets": {
+    "dungeon": { "src": "assets/kenney/tiny-dungeon/tilemap_packed.png", "frame": [16, 16], "spacing": 0, "margin": 0, "columns": 12, "rows": 11 },
+    "town":    { "src": "assets/kenney/tiny-town/tilemap_packed.png",    "frame": [16, 16], "spacing": 0, "margin": 0, "columns": 12, "rows": 11 },
+    "factory": { "src": "assets/kenney/tiny-factory/tilemap_packed.png", "frame": [16, 16], "spacing": 0, "margin": 0, "columns": 12, "rows": 11 },
+    "chars":   { "src": "assets/kenney/roguelike-characters/roguelikeChar_transparent.png", "frame": [16, 16], "spacing": 1, "margin": 0, "columns": 54, "rows": 12 }
+  },
+
+  "tilesets": {
+    "mines": {
+      "sheet": "dungeon",
+      "roles": {
+        "floor":       [48, 48, 49, 50, 51, 52, 53],
+        "wall":        [40, 40, 40, 28],
+        "wallTop":     [0, 0, 0, 0, 0, 0, 0, 0, 12],
+        "cover":       [63, 66, 82, 65],
+        "pit":         [0],
+        "deco":        [42],
+        "hazard_warn": [61],
+        "hazard_mark": [60]
+      },
+      "pitShade": "#000000b0",
+      "placeholder": {
+        "floor": "#c98a54", "wall": "#6e7388", "wallTop": "#4a2a2e", "cover": "#8a5a3a",
+        "pit": "#120a0c", "deco": "#b87a48", "hazard_warn": "#ffffff", "hazard_mark": "#ffffff"
+      },
+      "_notes": {
+        "floor": "Tiny Dungeon 48-53: tan sand floor. 48 is plain (listed 2x so plain tiles dominate), 49/51 are pebbled, 50/52/53 have soft edges.",
+        "wall": "40: plain grey brick face (listed 3x). 28: brick with a dark grate slot, used rarely. Drawn on a wall tile whose south neighbour is open.",
+        "wallTop": "0: flat dark brown rock mass (listed 8x). 12: same with rubble, for variety (listed 1 in 9).",
+        "cover": "63 wooden cabinet, 66 clay pot/sack, 82 barrel, 65 grave stone. Solid props on floor.",
+        "pit": "0 (dark rock) darkened by pitShade so a void reads differently from a wall mass.",
+        "deco": "42: grey rubble fragments on a tan floor background, drawn as a non-solid decal. (24 is the same on a dark background, so it is not used on floors.)",
+        "hazard_warn": "61: white hatched square. Used as the cave-in shadow telegraph.",
+        "hazard_mark": "60: white corner-bracket reticle. Marks landing spots."
+      }
+    },
+    "rooftops": {
+      "sheet": "town",
+      "roles": {
+        "floor":   [97, 109, 109, 121, 52, 53, 54, 64, 65, 66, 48, 49, 50],
+        "wall":    [76, 77, 72, 73],
+        "wallTop": [96, 108],
+        "cover":   [51, 55, 107, 130],
+        "pit":     [39, 40, 41],
+        "deco":    [],
+        "hazard_warn": [],
+        "hazard_mark": []
+      },
+      "pitShade": "#00000099",
+      "placeholder": { "floor": "#b8744a", "wall": "#9aa0b4", "wallTop": "#cfd4e0", "cover": "#7a5a48", "pit": "#2a1c14" },
+      "_notes": {
+        "_status": "PROVISIONAL. Stage 5 reviews this with the user. Not used by any mode yet.",
+        "floor": "Tiny Town roof tiles: flat stone roof (97, 109, 121) and red (52-54, 64-66) / slate (48-50) shingles.",
+        "pit": "Dirt street (39-41), seen from above, darkened by pitShade. Falling means dropping into the alley."
+      }
+    },
+    "pipepit": {
+      "sheet": "factory",
+      "roles": {
+        "floor":   [0, 0, 1, 2],
+        "wall":    [72, 84, 73, 85],
+        "wallTop": [3],
+        "cover":   [97, 96, 109, 126],
+        "pit":     [9, 11, 32, 33, 35],
+        "deco":    [],
+        "hazard_warn": [117, 118, 119],
+        "hazard_mark": [131]
+      },
+      "pitShade": "#00000066",
+      "placeholder": { "floor": "#c98a54", "wall": "#6a7080", "wallTop": "#3c3038", "cover": "#7a5a48", "pit": "#2a1c1c" },
+      "_notes": {
+        "_status": "PROVISIONAL. Stage 5 reviews this with the user. Not used by any mode yet.",
+        "floor": "Tiny Factory 0-2: orange tan floor plates.",
+        "pit": "Dark maroon pit tiles with rubble (9, 11, 32-35).",
+        "hazard_warn": "Yellow-black hazard stripes (117-119)."
+      }
+    }
+  },
+
+  "characters": {
+    "body": [1, 55, 109],
+    "hair": [19, 20, 21, 22, 73, 76, 77, 235, 236, 237, 239, 240, 241, 289, 451, 452, -1],
+    "legs":  { "red": 273, "blue": 219, "grey": 111, "police": 3 },
+    "torso": { "red": 7,   "blue": 11,  "grey": 282, "police": 285 },
+    "hat":   { "red": 136, "blue": 190, "grey": -1,  "police": 29 },
+    "_notes": {
+      "body": "1, 55, 109: three skin tones (with mouth). 0, 54, 108 are the same without a mouth.",
+      "hair": "Frames from cols 19-26 of the sheet. Row 0 brown (19-22), row 1 auburn (73,76,77), row 4 blonde (235-237), black (239-241), cream long (289), white (451-452). -1 means bald.",
+      "legs": "Col 3: 273 orange (red gang), 219 teal (blue gang), 111 light grey (neutral), 3 dark grey (police).",
+      "torso": "7 orange shirt with belt (red), 11 teal shirt (blue), 282 grey tunic (neutral), 285 dark grey with belt (police).",
+      "hat": "136 orange cap = Cutters red bandana, 190 teal cap = Circus durag, 29 helmet = police. -1 means none."
+    }
+  },
+
+  "icons": {
+    "cutlass":         { "sheet": "dungeon", "frame": 105 },
+    "shiv":            { "sheet": "dungeon", "frame": 103 },
+    "whopper":         { "sheet": "dungeon", "frame": 117 },
+    "keg_flail":       { "sheet": "chars",   "frame": 48 },
+    "singing_bow":     { "sheet": "town",    "frame": 118 },
+    "arbalest":        { "sheet": "town",    "frame": 119 },
+    "beast_hook":      { "sheet": "town",    "frame": 129 },
+    "ancient_pot":     { "sheet": "dungeon", "frame": 66 },
+    "old_staff":       { "sheet": "dungeon", "frame": 129 },
+    "veilwalker_net":  { "sheet": "dungeon", "frame": 56 },
+    "sad_sermon":      { "sheet": "dungeon", "frame": 64 },
+    "wind_pouch":      { "sheet": "town",    "frame": 107 },
+    "clockheart_tonic":{ "sheet": "dungeon", "frame": 116 },
+    "krags_cleaver":   { "sheet": "dungeon", "frame": 107 },
+    "zaars_edges":     { "sheet": "dungeon", "frame": 104 }
+  },
+
+  "anims": {}
+}
